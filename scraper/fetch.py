@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import time
 from dataclasses import dataclass
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
