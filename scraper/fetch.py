@@ -27,21 +27,35 @@ def _session() -> requests.Session:
 
 
 def discover_links(session: requests.Session | None = None) -> list[tuple[str, str]]:
-    """Devuelve [(url, texto)] de enlaces candidatos en las páginas fuente."""
+    """Return [(url, text)] of PDF links. Follow sub-pages one level."""
     session = session or _session()
     found: dict[str, str] = {}
-    for page in config.SOURCES:
+    seen_pages: set[str] = set()
+    queue = list(config.SOURCES)
+    depth1 = set(config.SOURCES)
+
+    while queue:
+        page = queue.pop(0)
+        if page in seen_pages:
+            continue
+        seen_pages.add(page)
         resp = session.get(page, timeout=config.REQUEST_TIMEOUT)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         for a in soup.find_all("a", href=True):
             href = urljoin(page, a["href"])
             text = a.get_text(" ", strip=True)
-            blob = f"{href} {text}".lower()
-            is_pdf = href.lower().split("?")[0].endswith(".pdf")
-            if is_pdf and any(k in blob for k in config.LINK_KEYWORDS):
+            path = urlparse(href).path.lower()
+            if ".pdf" in path and config.PDF_PATH_PREFIX in path:
                 found[href] = text
+            elif (
+                page in depth1
+                and "/web/rrhh-educacion/" in path
+                and any(k in path for k in config.SUBPAGE_KEYWORDS)
+            ):
+                queue.append(href)
         time.sleep(config.REQUEST_DELAY_SECONDS)
+    print(f"{len(seen_pages)} paginas, {len(found)} PDF")
     return list(found.items())
 
 
