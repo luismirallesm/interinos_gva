@@ -26,6 +26,8 @@ jobs:
       - run: python -m scraper.build
       - name: Commit datos si hay cambios
         run: |
+          mkdir -p data
+          touch data/.gitkeep
           git config user.name "interinos-bot"
           git config user.email "interinos-bot@users.noreply.github.com"
           git add data
