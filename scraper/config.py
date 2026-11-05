@@ -13,8 +13,13 @@ HISTORY_FILE = DATA_DIR / "history.json"
 
 # Páginas del portal donde se publican los listados.
 SOURCES = [
-    "https://ceice.gva.es/es/web/rrhh-educacion",
+    "https://ceice.gva.es/es/web/rrhh-educacion/adjudicaciones",
 ]
+
+# Sub-pages to follow one level (listing live there)
+SUBPAGE_KEYWORDS = ("adjudic", "borsa", "bolsa", "interin")
+# PDF link must contain this
+PDF_PATH_PREFIX = "/documents/162909733/"
 
 # Un enlace se considera listado si apunta a .pdf y su texto/URL contiene alguna de estas palabras.
 LINK_KEYWORDS = ("adjudicaci", "adjudicacio", "bolsa", "borsa")
