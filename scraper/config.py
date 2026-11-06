@@ -15,8 +15,10 @@ SOURCES = [
 ]
 SUBPAGE_KEYWORDS = ("adjudic", "borsa", "bolsa", "interin")
 
-# Un listado diario se llama p.ej. 261105_lis_mae.pdf (AAMMDD_lis_<cuerpo>.pdf)
+# Listado diario:        261105_lis_mae.pdf        (AAMMDD_lis_<cuerpo>.pdf)
+# Listado inicio curso:  ini_2026_adj_int_mae.pdf  (ini_<año>_adj_int_<cuerpo>.pdf)
 LISTING_RE = re.compile(r"(\d{6})_lis_([a-z]+)\.pdf", re.IGNORECASE)
+INICIO_RE = re.compile(r"ini_(\d{4})_adj_int_([a-z]+)\.pdf", re.IGNORECASE)
 
 USER_AGENT = "interinos-gva-bot/0.1 (proyecto open source; consulta educativa)"
 REQUEST_TIMEOUT = 60

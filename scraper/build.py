@@ -32,16 +32,24 @@ def _dump(path, obj, indent=None):
 
 
 def date_cuerpo_from_name(name: str) -> tuple[str | None, str | None]:
+    """(fecha, cuerpo). En el listado de inicio de curso la fecha viene del encabezado."""
     m = config.LISTING_RE.search(name)
-    if not m:
-        return None, None
-    yymmdd, cuerpo = m.groups()
-    return f"20{yymmdd[:2]}-{yymmdd[2:4]}-{yymmdd[4:]}", cuerpo.lower()
+    if m:
+        yymmdd, cuerpo = m.groups()
+        return f"20{yymmdd[:2]}-{yymmdd[2:4]}-{yymmdd[4:]}", cuerpo.lower()
+    m = config.INICIO_RE.search(name)
+    if m:
+        return None, m.group(2).lower()
+    return None, None
 
 
-def store_snapshot(rows: list[dict], fecha: str, cuerpo: str) -> None:
+def kind_from_name(name: str) -> str:
+    return "inicio_curso" if config.INICIO_RE.search(name) else "diario"
+
+
+def store_snapshot(rows: list[dict], fecha: str, cuerpo: str, kind: str = "diario") -> None:
     counts = Counter(r.get("estado", "desconocido") for r in rows)
-    _dump(config.DATA_DIR / cuerpo / f"{fecha}.json", {"cuerpo": cuerpo, "fecha": fecha, "rows": rows})
+    _dump(config.DATA_DIR / cuerpo / f"{fecha}.json", {"cuerpo": cuerpo, "fecha": fecha, "tipo": kind, "rows": rows})
 
     idx = _load(config.INDEX_FILE, {"cuerpos": {}})
     fechas = set(idx["cuerpos"].get(cuerpo, {}).get("fechas", [])) | {fecha}
@@ -49,7 +57,7 @@ def store_snapshot(rows: list[dict], fecha: str, cuerpo: str) -> None:
     _dump(config.INDEX_FILE, idx, indent=1)
 
     hist = _load(config.HISTORY_FILE, {})
-    hist.setdefault(cuerpo, {})[fecha] = {"total": len(rows), **counts}
+    hist.setdefault(cuerpo, {})[fecha] = {"tipo": kind, "total": len(rows), **counts}
     _dump(config.HISTORY_FILE, hist, indent=1)
     print(f"{cuerpo} {fecha}: {len(rows)} filas {dict(counts)}")
 
@@ -61,7 +69,7 @@ def process(path: str, name: str) -> int:
     if not rows or not fecha or not cuerpo:
         print(f"SALTADO {name}: filas={len(rows)} fecha={fecha} cuerpo={cuerpo}")
         return 0
-    store_snapshot(rows, fecha, cuerpo)
+    store_snapshot(rows, fecha, cuerpo, kind_from_name(name))
     return len(rows)
 
 

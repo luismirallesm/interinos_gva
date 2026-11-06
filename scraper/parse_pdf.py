@@ -27,11 +27,11 @@ PROVINCIAS = {"03": "Alicante", "12": "Castellón", "46": "Valencia"}
 
 STATUS_RE = re.compile(r"(No ha participat|Ha participat|No adjudicat|Adjudicat|Desactivat)\s*$")
 ORDER_RE = re.compile(r"^ {0,4}(\d{1,6}) {2,}(\S.*?)\s*$")
-PETICION_RE = re.compile(r"\s+Petici.n:\s*(\d+)\s+(\S+)\s*$")
+PETICION_RE = re.compile(r"^(?:Petici.n:\s*(\d+)\s+)?(\S.*)$")
 CENTRE_RE = re.compile(r"^\s*(\d+)\s+(.+?)\((\d{8})\)(.+?)\s*$")
-SPEC_RE = re.compile(r"^\s*(\d+)\s*/\s*(.+?)\s*$")
+SPEC_RE = re.compile(r"^\s*([0-9][0-9A-Z]*)\s*/\s*(.+?)\s*$")
 TIPO_RE = re.compile(r"(VACANT|SUBSTITUCI\S*\s+INDETERMINADA|SUBSTITUCI\S*)")
-DATE_RE = re.compile(r"D.A (\d{2})/(\d{2})/(\d{4})")
+DATE_RE = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
 
 
 def pdf_to_text(path: str) -> str:
@@ -72,11 +72,17 @@ def parse_text(text: str) -> tuple[list[dict], str | None]:
 
         om = ORDER_RE.match(line)
         if om and "," in om.group(2):
-            rest = om.group(2)
-            pet = PETICION_RE.search(rest)
-            cur = {"orden": int(om.group(1)), "nombre": (rest[: pet.start()] if pet else rest).strip()}
-            if pet:
-                cur["adj"] = {"peticion": int(pet.group(1)), "tipo_peticion": pet.group(2).lower()}
+            # nombre y (opcional) petición van separados por 2+ espacios:
+            #   "NOMBRE, X     Petición:  1  Voluntaria"  /  "NOMBRE, X     Voluntaria"
+            parts = re.split(r"\s{2,}", om.group(2).strip(), maxsplit=1)
+            cur = {"orden": int(om.group(1)), "nombre": parts[0].strip()}
+            if len(parts) > 1:
+                pm = PETICION_RE.match(re.sub(r"\s+", " ", parts[1]).strip())
+                if pm:
+                    adj = cur.setdefault("adj", {})
+                    if pm.group(1):
+                        adj["peticion"] = int(pm.group(1))
+                    adj["tipo_peticion"] = pm.group(2).lower()
             rows.append(cur)
             continue
         if cur is None:
