@@ -1,99 +1,114 @@
-"""PDF de adjudicaciones -> filas normalizadas.
+"""Listado diario de adjudicación (AAMMDD_lis_<cuerpo>.pdf) -> filas.
 
-Detecta las columnas por el texto de la cabecera, no por posición, para
-tolerar cambios de maquetación entre listados.
+El PDF NO es una tabla. Es texto con este patrón por persona:
+
+    163   APELLIDOS, NOMBRE            Petición:   1   Voluntaria   (solo si adjudicada)
+          858392 LOCALIDAD(12004916)NOMBRE DEL CENTRO               (solo si adjudicada)
+                 153 / ESPECIALIDAD                                  (solo si adjudicada)
+          23 horas   [Itinerante]   VACANT        Adjudicat          (solo si adjudicada)
+    164   APELLIDOS, NOMBRE
+                                                 Desactivat
+
+El listado no trae NIF. Se extrae el texto con `pdftotext -layout` (poppler).
 """
 from __future__ import annotations
 
 import re
-import unicodedata
-
-import pdfplumber
-
-HEADER_ALIASES = {
-    "nif": ("nif", "dni", "nif/nie", "document"),
-    "nombre": ("nombre", "nom", "apellidos y nombre", "cognoms i nom", "persona"),
-    "especialidad": ("especialidad", "especialitat", "cuerpo", "especialidad/cuerpo"),
-    "orden": ("orden", "ordre", "n orden", "num orden", "posicion", "posicio", "n.o"),
-    "estado": ("estado", "estat", "situacion", "situacio"),
-    "centro": ("centro", "centre", "centro adjudicado", "centre adjudicat"),
-    "localidad": ("localidad", "localitat", "municipio", "municipi"),
-    "provincia": ("provincia",),
-}
+import subprocess
 
 STATUS_MAP = {
-    "activo": "activo", "actiu": "activo", "a": "activo",
-    "adjudicado": "adjudicado", "adjudicat": "adjudicado",
-    "desactivado": "desactivado", "desactivat": "desactivado",
-    "excluido": "excluido", "exclos": "excluido",
+    "adjudicat": "adjudicado",
+    "desactivat": "desactivado",
+    "no adjudicat": "no_adjudicado",
+    "ha participat": "ha_participado",
+    "no ha participat": "no_ha_participado",
 }
+PROVINCIAS = {"03": "Alicante", "12": "Castellón", "46": "Valencia"}
+
+STATUS_RE = re.compile(r"(No ha participat|Ha participat|No adjudicat|Adjudicat|Desactivat)\s*$")
+ORDER_RE = re.compile(r"^ {0,4}(\d{1,6}) {2,}(\S.*?)\s*$")
+PETICION_RE = re.compile(r"\s+Petici.n:\s*(\d+)\s+(\S+)\s*$")
+CENTRE_RE = re.compile(r"^\s*(\d+)\s+(.+?)\((\d{8})\)(.+?)\s*$")
+SPEC_RE = re.compile(r"^\s*(\d+)\s*/\s*(.+?)\s*$")
+TIPO_RE = re.compile(r"(VACANT|SUBSTITUCI\S*\s+INDETERMINADA|SUBSTITUCI\S*)")
+DATE_RE = re.compile(r"D.A (\d{2})/(\d{2})/(\d{4})")
 
 
-def _clean(s: str | None) -> str:
-    return re.sub(r"\s+", " ", (s or "")).strip()
+def pdf_to_text(path: str) -> str:
+    try:
+        res = subprocess.run(
+            ["pdftotext", "-layout", path, "-"],
+            capture_output=True, text=True, check=True,
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError("Falta pdftotext (instala poppler-utils)") from e
+    return res.stdout
 
 
-def _fold(s: str) -> str:
-    s = unicodedata.normalize("NFKD", s.lower())
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    return re.sub(r"[^a-z0-9/ ]", "", s).strip()
+def _norm_tipo(raw: str) -> str:
+    return "vacante" if raw.upper().startswith("VACANT") else "sustitucion_indeterminada"
 
 
-def match_header(cell: str) -> str | None:
-    f = _fold(cell)
-    if not f:
-        return None
-    for key, aliases in HEADER_ALIASES.items():
-        if f in aliases or any(f.startswith(a) for a in aliases if len(a) > 3):
-            return key
-    return None
+def _parse_job(before: str, adj: dict) -> None:
+    tm = TIPO_RE.search(before)
+    jornada = before[: tm.start()] if tm else before
+    if tm:
+        adj["tipo"] = _norm_tipo(tm.group(1))
+    adj["itinerante"] = "Itinerante" in jornada
+    adj["jornada"] = re.sub(r"\s+", " ", jornada.replace("Itinerante", "")).strip()
 
 
-def normalize_status(raw: str) -> str:
-    f = _fold(raw)
-    return STATUS_MAP.get(f, f or "desconocido")
-
-
-def parse_order(raw: str) -> int | None:
-    m = re.search(r"\d+", raw.replace(".", ""))
-    return int(m.group()) if m else None
-
-
-def detect_columns(row: list[str | None]) -> dict[int, str]:
-    mapping: dict[int, str] = {}
-    for i, cell in enumerate(row):
-        key = match_header(_clean(cell))
-        if key and key not in mapping.values():
-            mapping[i] = key
-    return mapping
-
-
-def rows_from_table(table: list[list[str | None]], mapping: dict[int, str] | None):
-    """Devuelve (filas, mapping). Reutiliza el mapping si la tabla no trae cabecera."""
-    out = []
-    for raw in table:
-        det = detect_columns(raw)
-        if len(det) >= 3:           # fila de cabecera
-            mapping = det
-            continue
-        if not mapping:
-            continue
-        rec = {key: _clean(raw[i]) for i, key in mapping.items() if i < len(raw)}
-        order = parse_order(rec.get("orden", ""))
-        if order is None:
-            continue
-        rec["orden"] = order
-        rec["estado"] = normalize_status(rec.get("estado", ""))
-        out.append(rec)
-    return out, mapping
-
-
-def parse_pdf(path: str) -> list[dict]:
+def parse_text(text: str) -> tuple[list[dict], str | None]:
+    """Devuelve (filas, fecha ISO del encabezado)."""
     rows: list[dict] = []
-    mapping = None
-    with pdfplumber.open(path) as pdf:
-        for page in pdf.pages:
-            for table in page.extract_tables():
-                parsed, mapping = rows_from_table(table, mapping)
-                rows.extend(parsed)
-    return rows
+    cur: dict | None = None
+    fecha = None
+
+    for line in text.splitlines():
+        if fecha is None:
+            dm = DATE_RE.search(line)
+            if dm:
+                fecha = f"{dm.group(3)}-{dm.group(2)}-{dm.group(1)}"
+
+        om = ORDER_RE.match(line)
+        if om and "," in om.group(2):
+            rest = om.group(2)
+            pet = PETICION_RE.search(rest)
+            cur = {"orden": int(om.group(1)), "nombre": (rest[: pet.start()] if pet else rest).strip()}
+            if pet:
+                cur["adj"] = {"peticion": int(pet.group(1)), "tipo_peticion": pet.group(2).lower()}
+            rows.append(cur)
+            continue
+        if cur is None:
+            continue
+
+        sm = STATUS_RE.search(line)
+        if sm:
+            cur["estado"] = STATUS_MAP[sm.group(1).lower()]
+            before = line[: sm.start()].strip()
+            if before:
+                _parse_job(before, cur.setdefault("adj", {}))
+            continue
+        cm = CENTRE_RE.match(line)
+        if cm:
+            adj = cur.setdefault("adj", {})
+            code = cm.group(3)
+            adj.update(
+                puesto=cm.group(1),
+                localidad=cm.group(2).strip(),
+                centro_codigo=code,
+                centro=cm.group(4).strip(),
+                provincia=PROVINCIAS.get(code[:2]),
+            )
+            continue
+        pm = SPEC_RE.match(line)
+        # la especialidad va justo tras el centro; ignora líneas de fecha de cabecera
+        if pm and "centro" in cur.get("adj", {}) and "especialidad" not in cur["adj"]:
+            adj = cur["adj"]
+            adj["especialidad_codigo"] = pm.group(1)
+            adj["especialidad"] = pm.group(2).strip()
+    return rows, fecha
+
+
+def parse_pdf(path: str) -> tuple[list[dict], str | None]:
+    return parse_text(pdf_to_text(path))

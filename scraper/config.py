@@ -1,8 +1,5 @@
-"""Configuración del scraper.
-
-IMPORTANTE: las URLs y palabras clave son un punto de partida. Hay que
-verificarlas contra el portal real y ajustarlas (ver README).
-"""
+"""Configuración del scraper."""
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -10,20 +7,17 @@ DATA_DIR = ROOT / "data"
 RAW_DIR = ROOT / "raw"          # PDFs descargados (no se commitean)
 STATE_FILE = DATA_DIR / "state.json"
 HISTORY_FILE = DATA_DIR / "history.json"
+INDEX_FILE = DATA_DIR / "index.json"
 
-# Páginas del portal donde se publican los listados.
+# Página del portal con los listados. Se siguen subpáginas un nivel.
 SOURCES = [
     "https://ceice.gva.es/es/web/rrhh-educacion/adjudicaciones",
 ]
-
-# Sub-pages to follow one level (listing live there)
 SUBPAGE_KEYWORDS = ("adjudic", "borsa", "bolsa", "interin")
-# PDF link must contain this
-PDF_PATH_PREFIX = "/documents/162909733/"
 
-# Un enlace se considera listado si apunta a .pdf y su texto/URL contiene alguna de estas palabras.
-LINK_KEYWORDS = ("adjudicaci", "adjudicacio", "bolsa", "borsa")
+# Un listado diario se llama p.ej. 261105_lis_mae.pdf (AAMMDD_lis_<cuerpo>.pdf)
+LISTING_RE = re.compile(r"(\d{6})_lis_([a-z]+)\.pdf", re.IGNORECASE)
 
 USER_AGENT = "interinos-gva-bot/0.1 (proyecto open source; consulta educativa)"
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = 60
 REQUEST_DELAY_SECONDS = 1.0     # cortesía con el servidor

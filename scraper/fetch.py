@@ -1,4 +1,4 @@
-"""Descubre y descarga PDFs de listados publicados por la GVA."""
+"""Descubre y descarga PDFs de listados diarios publicados por la GVA."""
 from __future__ import annotations
 
 import hashlib
@@ -15,7 +15,6 @@ from . import config
 @dataclass
 class Listing:
     url: str
-    title: str
     path: str
     sha256: str
 
@@ -26,40 +25,39 @@ def _session() -> requests.Session:
     return s
 
 
-def discover_links(session: requests.Session | None = None) -> list[tuple[str, str]]:
-    """Return [(url, text)] of PDF links. Follow sub-pages one level."""
+def discover_links(session: requests.Session | None = None) -> list[str]:
+    """URLs de PDFs con nombre AAMMDD_lis_<cuerpo>.pdf. Sigue subpáginas un nivel."""
     session = session or _session()
-    found: dict[str, str] = {}
-    seen_pages: set[str] = set()
+    found: set[str] = set()
+    seen: set[str] = set()
+    first_level = set(config.SOURCES)
     queue = list(config.SOURCES)
-    depth1 = set(config.SOURCES)
 
     while queue:
         page = queue.pop(0)
-        if page in seen_pages:
+        if page in seen:
             continue
-        seen_pages.add(page)
+        seen.add(page)
         resp = session.get(page, timeout=config.REQUEST_TIMEOUT)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         for a in soup.find_all("a", href=True):
             href = urljoin(page, a["href"])
-            text = a.get_text(" ", strip=True)
-            path = urlparse(href).path.lower()
-            if ".pdf" in path and config.PDF_PATH_PREFIX in path:
-                found[href] = text
+            path = urlparse(href).path
+            if config.LISTING_RE.search(path):
+                found.add(href)
             elif (
-                page in depth1
-                and "/web/rrhh-educacion/" in path
-                and any(k in path for k in config.SUBPAGE_KEYWORDS)
+                page in first_level
+                and "/web/rrhh-educacion/" in path.lower()
+                and any(k in path.lower() for k in config.SUBPAGE_KEYWORDS)
             ):
                 queue.append(href)
         time.sleep(config.REQUEST_DELAY_SECONDS)
-    print(f"{len(seen_pages)} paginas, {len(found)} PDF")
-    return list(found.items())
+    print(f"{len(seen)} páginas, {len(found)} listados")
+    return sorted(found)
 
 
-def download(url: str, title: str, session: requests.Session | None = None) -> Listing:
+def download(url: str, session: requests.Session | None = None) -> Listing:
     session = session or _session()
     resp = session.get(url, timeout=config.REQUEST_TIMEOUT)
     resp.raise_for_status()
@@ -68,4 +66,4 @@ def download(url: str, title: str, session: requests.Session | None = None) -> L
     path = config.RAW_DIR / f"{digest[:16]}.pdf"
     path.write_bytes(resp.content)
     time.sleep(config.REQUEST_DELAY_SECONDS)
-    return Listing(url=url, title=title, path=str(path), sha256=digest)
+    return Listing(url=url, path=str(path), sha256=digest)
