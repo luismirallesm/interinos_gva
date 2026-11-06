@@ -1,0 +1,33 @@
+{
+ "mae": {
+  "2026-07-15": {
+   "adjudicado": 5116,
+   "desactivado": 2794,
+   "ha_participado": 1564,
+   "no_adjudicado": 7552,
+   "no_ha_participado": 25,
+   "tipo": "inicio_curso",
+   "total": 17051
+  },
+  "2026-11-05": {
+   "adjudicado": 116,
+   "desactivado": 2756,
+   "ha_participado": 1513,
+   "no_adjudicado": 1945,
+   "no_ha_participado": 20,
+   "tipo": "diario",
+   "total": 6350
+  }
+ },
+ "sec": {
+  "2026-11-05": {
+   "adjudicado": 71,
+   "desactivado": 5363,
+   "ha_participado": 883,
+   "no_adjudicado": 324,
+   "no_ha_participado": 73,
+   "tipo": "diario",
+   "total": 6714
+  }
+ }
+}

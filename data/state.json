@@ -1,3 +1,16 @@
 {
- "processed": {}
+ "processed": {
+  "09e20dd80e775a7bd07ee66d18491843efb1127c625d438ed563d7a113142786": {
+   "rows": 6714,
+   "url": "https://ceice.gva.es/documents/162909733/416766492/261105_lis_sec.pdf"
+  },
+  "0de5d3fd5548c0a824ad347c3b3a63562a00ff7c030fb6aad544bff5aa923d16": {
+   "rows": 6350,
+   "url": "inbox/261105_lis_mae.pdf"
+  },
+  "229556fed06a084a7388e10fbdf6dd65d0895910900bbaa4f58d75c8c15cb94a": {
+   "rows": 17051,
+   "url": "inbox/ini_2026_adj_int_mae.pdf"
+  }
+ }
 }
