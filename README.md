@@ -16,6 +16,9 @@ Consulta gratuita y open source de adjudicaciones de personal docente interino d
 - `data/history.json`: totales por estado y día.
 - `data/state.json`: hashes de PDFs ya procesados.
 
+## Subir un listado a mano (modo seguro)
+Sube el PDF a la carpeta `inbox/` (GitHub: Add file → Upload files). El workflow se lanza solo, genera `data/` y hace commit.
+
 ## Desarrollo
 ```
 sudo apt-get install poppler-utils
