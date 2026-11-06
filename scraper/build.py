@@ -13,6 +13,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from collections import Counter
@@ -83,13 +84,31 @@ def main() -> None:
         return
 
     state = _load(config.STATE_FILE, {"processed": {}})
-    for url in discover_links():
-        listing = download(url)
-        if listing.sha256 in state["processed"]:
+
+    # 1) Modo seguro: PDFs subidos a mano a inbox/
+    inbox = sorted(config.INBOX_DIR.glob("*.pdf")) if config.INBOX_DIR.exists() else []
+    print(f"inbox: {len(inbox)} PDF")
+    for pdf in inbox:
+        digest = hashlib.sha256(pdf.read_bytes()).hexdigest()
+        if digest in state["processed"]:
+            print(f"ya procesado: {pdf.name}")
             continue
-        n = process(listing.path, url.split("?")[0].rsplit("/", 1)[-1])
+        n = process(str(pdf), pdf.name)
         if n:
-            state["processed"][listing.sha256] = {"url": url, "rows": n}
+            state["processed"][digest] = {"url": f"inbox/{pdf.name}", "rows": n}
+
+    # 2) Descarga automática (opcional; un fallo aquí no rompe el resto)
+    if os.environ.get("SCRAPE_WEB", "1") == "1":
+        try:
+            for url in discover_links():
+                listing = download(url)
+                if listing.sha256 in state["processed"]:
+                    continue
+                n = process(listing.path, url.split("?")[0].rsplit("/", 1)[-1])
+                if n:
+                    state["processed"][listing.sha256] = {"url": url, "rows": n}
+        except Exception as e:  # noqa: BLE001
+            print(f"AVISO descarga automática falló: {type(e).__name__}: {e}")
     _dump(config.STATE_FILE, state, indent=1)
 
 
