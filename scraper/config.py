@@ -4,6 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
+INBOX_DIR = ROOT / "inbox"      # PDFs subidos a mano (modo seguro)
 RAW_DIR = ROOT / "raw"          # PDFs descargados (no se commitean)
 STATE_FILE = DATA_DIR / "state.json"
 HISTORY_FILE = DATA_DIR / "history.json"
@@ -11,9 +12,11 @@ INDEX_FILE = DATA_DIR / "index.json"
 
 # Página del portal con los listados. Se siguen subpáginas un nivel.
 SOURCES = [
+    # Aquí está el enlace "listado de adjudicaciones maestros" (verificado por el usuario)
+    "https://ceice.gva.es/es/web/rrhh-educacion/resolucion",
     "https://ceice.gva.es/es/web/rrhh-educacion/adjudicaciones",
 ]
-SUBPAGE_KEYWORDS = ("adjudic", "borsa", "bolsa", "interin")
+SUBPAGE_KEYWORDS = ("resoluc", "adjudic", "borsa", "bolsa", "interin")
 
 # Listado diario:        261105_lis_mae.pdf        (AAMMDD_lis_<cuerpo>.pdf)
 # Listado inicio curso:  ini_2026_adj_int_mae.pdf  (ini_<año>_adj_int_<cuerpo>.pdf)

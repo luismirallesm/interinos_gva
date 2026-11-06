@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import time
+import urllib.robotparser
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
@@ -25,6 +26,20 @@ def _session() -> requests.Session:
     return s
 
 
+def allowed_by_robots(url: str, session: requests.Session) -> bool:
+    """Respeta robots.txt del sitio. Si no se puede leer, se asume permitido."""
+    p = urlparse(url)
+    try:
+        r = session.get(f"{p.scheme}://{p.netloc}/robots.txt", timeout=config.REQUEST_TIMEOUT)
+    except requests.RequestException:
+        return True
+    if r.status_code != 200:
+        return True
+    rp = urllib.robotparser.RobotFileParser()
+    rp.parse(r.text.splitlines())
+    return rp.can_fetch(config.USER_AGENT, url)
+
+
 def discover_links(session: requests.Session | None = None) -> list[str]:
     """URLs de PDFs con nombre AAMMDD_lis_<cuerpo>.pdf. Sigue subpáginas un nivel."""
     session = session or _session()
@@ -38,6 +53,9 @@ def discover_links(session: requests.Session | None = None) -> list[str]:
         if page in seen:
             continue
         seen.add(page)
+        if not allowed_by_robots(page, session):
+            print(f"robots.txt NO permite {page}: se omite")
+            continue
         resp = session.get(page, timeout=config.REQUEST_TIMEOUT)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -59,6 +77,8 @@ def discover_links(session: requests.Session | None = None) -> list[str]:
 
 def download(url: str, session: requests.Session | None = None) -> Listing:
     session = session or _session()
+    if not allowed_by_robots(url, session):
+        raise PermissionError(f"robots.txt no permite {url}")
     resp = session.get(url, timeout=config.REQUEST_TIMEOUT)
     resp.raise_for_status()
     digest = hashlib.sha256(resp.content).hexdigest()

@@ -97,7 +97,20 @@ def main() -> None:
         if n:
             state["processed"][digest] = {"url": f"inbox/{pdf.name}", "rows": n}
 
-    # 2) Descarga automática (opcional; un fallo aquí no rompe el resto)
+    # 2) URLs directas de PDF (workflow_dispatch -> variable PDF_URLS, separadas por espacios)
+    for url in os.environ.get("PDF_URLS", "").split():
+        try:
+            listing = download(url)
+            if listing.sha256 in state["processed"]:
+                print(f"ya procesado: {url}")
+                continue
+            n = process(listing.path, url.split("?")[0].rsplit("/", 1)[-1])
+            if n:
+                state["processed"][listing.sha256] = {"url": url, "rows": n}
+        except Exception as e:  # noqa: BLE001
+            print(f"ERROR con {url}: {type(e).__name__}: {e}")
+
+    # 3) Descarga automática (opcional; un fallo aquí no rompe el resto)
     if os.environ.get("SCRAPE_WEB", "1") == "1":
         try:
             for url in discover_links():
