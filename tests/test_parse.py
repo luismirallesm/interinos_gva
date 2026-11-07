@@ -97,3 +97,58 @@ def test_cuerpo_no_permitido_se_ignora(tmp_path):
     from scraper.build import process
     # no debe parsear ni escribir nada: el cuerpo "sec" está fuera de CUERPOS
     assert process(str(tmp_path / "no_existe.pdf"), "261105_lis_sec.pdf") == 0
+
+
+def test_desde_inicio(tmp_path):
+    import json
+    from scraper.build import compute_since_start
+    d = tmp_path / "mae"; d.mkdir()
+    def row(o, n, e, adj=None):
+        r = {"orden": o, "nombre": n, "estado": e}
+        if adj: r["adj"] = adj
+        return r
+    base = {"fecha": "2026-07-15", "tipo": "inicio_curso", "rows": [
+        row(1, "A, A", "no_adjudicado"), row(2, "B, B", "no_adjudicado"), row(3, "C, C", "desactivado"), row(4, "D, D", "no_adjudicado")]}
+    dia = {"fecha": "2026-10-27", "tipo": "diario", "rows": [
+        row(1, "A, A", "no_adjudicado"), row(2, "B, B", "no_adjudicado"), row(3, "D, D", "adjudicado", {"centro": "CEIP X", "provincia": "Valencia"})]}
+    (d / "2026-07-15.json").write_text(json.dumps(base)); (d / "2026-10-27.json").write_text(json.dumps(dia))
+    out = compute_since_start("mae", tmp_path)
+    assert out["base"] == "2026-07-15" and out["diarios"] == ["2026-10-27"]
+    (nombre, o_ini, ef_ini, fecha, o_dia, prov, *_), = out["adjudicados"]
+    assert (nombre, o_ini, ef_ini, fecha, o_dia, prov) == ("D, D", 4, 3, "2026-10-27", 3, "Valencia")
+
+
+class _Resp:
+    def __init__(self, status, content=b""):
+        self.status_code, self.content = status, content
+
+
+class _FakeSession:
+    """Solo existe 261022_lis_mae.pdf en la carpeta 415637604."""
+    def __init__(self):
+        self.calls = []
+
+    def get(self, url, timeout=None):
+        self.calls.append(url)
+        if url.endswith("/415637604/261022_lis_mae.pdf"):
+            return _Resp(200, b"%PDF-1.4 falso")
+        if url.endswith("/robots.txt"):
+            return _Resp(404)
+        return _Resp(404)
+
+
+def test_probe_listings(tmp_path, monkeypatch):
+    import datetime as dt
+    from scraper import config, fetch
+    monkeypatch.setattr(config, "RAW_DIR", tmp_path)
+    monkeypatch.setattr(config, "PROBE_START", "2026-10-20")
+    monkeypatch.setattr(config, "PROBE_DELAY_SECONDS", 0)
+    s = _FakeSession()
+    found, missing = fetch.probe_listings(
+        "mae", known_dates={"2026-10-21"}, folders=[414354213, 415637604, 416766492],
+        skip={"2026-10-20": 3}, today=dt.date(2026, 10, 23), session=s)
+    assert [u.rsplit("/", 1)[-1] for u, _ in found] == ["261022_lis_mae.pdf"]
+    assert fetch.folder_of(found[0][0]) == 415637604
+    # 20/10 se salta (>7 días no aplica: hoy-20 = 3 días, así que SÍ se prueba), 21/10 conocido, 23/10 sin listado
+    assert set(missing) == {"2026-10-20", "2026-10-23"}
+    assert not any("261021" in u for u in s.calls)
