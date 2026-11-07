@@ -26,3 +26,9 @@ pip install -r requirements.txt
 pytest
 python -m scraper.build --pdf 261105_lis_mae.pdf
 ```
+
+## Web (GitHub Pages)
+`index.html` en la raíz lee `data/` directamente. Activar en *Settings → Pages → Deploy from a branch → main / (root)*.
+Para probar en local: `python -m http.server` y abrir http://localhost:8000
+- Posición efectiva = 1 + personas por delante que no están desactivadas ni adjudicadas.
+- Las personas se enlazan entre listados por nombre (+ nº de aparición si hay homónimos), porque el orden cambia cada día.
