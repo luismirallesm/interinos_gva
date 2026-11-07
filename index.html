@@ -71,4 +71,157 @@ footer{margin-top:28px;color:var(--mut);font-size:.82rem}
 <section id="met" hidden></section>
 
 <footer>
-  Herramienta no oficial y gratuita. Datos tomados de los listados públicos de
+  Herramienta no oficial y gratuita. Datos tomados de los listados públicos de la Conselleria d'Educació; pueden contener errores. Consulta siempre la resolución oficial.
+  <span id="act"></span>
+</footer>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+const ESTADO={adjudicado:'Adjudicado',desactivado:'Desactivado',no_adjudicado:'No adjudicado',ha_participado:'Ha participado',no_ha_participado:'No ha participado'};
+const fecha=d=>d.split('-').reverse().join('/');
+const med=a=>{if(!a.length)return null;a=[...a].sort((x,y)=>x-y);return a[Math.floor(a.length/2)]};
+async function j(u){const r=await fetch(u);if(!r.ok)throw new Error(u+' → '+r.status);return r.json()}
+
+// Posición efectiva = 1 + personas por delante que siguen activas (ni desactivadas ni ya adjudicadas).
+// Las personas se enlazan entre listados por nombre + nº de aparición (para homónimos).
+function annotate(rows){
+  const seen={},cnt={};let a=0;
+  rows.forEach(r=>cnt[r.nombre]=(cnt[r.nombre]||0)+1);
+  for(const r of rows){
+    r.n=norm(r.nombre);seen[r.nombre]=(seen[r.nombre]||0)+1;
+    r.k=r.nombre+'#'+seen[r.nombre];r.dup=cnt[r.nombre];r.ef=a+1;
+    if(r.estado!=='desactivado'&&r.estado!=='adjudicado')a++;
+  }
+  return{rows,map:new Map(rows.map(r=>[r.k,r])),total:rows.length,activos:a};
+}
+let S;
+async function init(){
+  try{
+    const c=(await j('data/index.json')).cuerpos.mae,f=c.fechas,latest=c.latest;
+    const base=f.length>1&&f[0]!==latest?f[0]:null;
+    const prev=f.length>2?f[f.length-2]:null;
+    const snap=async d=>annotate((await j(`data/mae/${d}.json`)).rows);
+    // Todo se pide en paralelo; la búsqueda se activa en cuanto llega el último listado.
+    const pB=base?snap(base).catch(()=>null):null,pP=prev?snap(prev).catch(()=>null):null;
+    const pD=j('data/mae/desde_inicio.json').catch(()=>null),pH=j('data/history.json').catch(()=>({}));
+    const L=await snap(latest);
+    S={latest,base,prev,L,B:null,P:null,hist:{},D:null};
+    const txt=`Último listado: ${fecha(latest)} · ${L.total.toLocaleString('es')} maestros en la lista`;
+    $('#estado').textContent=txt+' · cargando histórico…';
+    initAdj();buscar();
+    const [B,P,H,D]=await Promise.all([pB,pP,pH,pD]);
+    if(D){D.adj=D.adjudicados.map(e=>({nombre:e[0],oini:e[1],efini:e[2],fecha:e[3],ord:e[4],prov:e[5],loc:e[6],centro:e[7],esp:e[8]}));
+      D.idx=new Map(D.adj.filter(a=>a.oini).map(a=>[a.nombre+'|'+a.oini,a]));
+      D.max=D.adj.reduce((m,a)=>a.oini&&(!m||a.oini>m.oini)?a:m,null);}
+    Object.assign(S,{B,P,hist:H.mae||{},D});
+    $('#estado').textContent=txt;
+    renderMet();buscar();
+  }catch(e){
+    $('#estado').textContent='No se pudieron cargar los datos: '+e.message;
+    console.error(e);
+  }
+}
+
+function track(r){
+  const b=S.B&&S.B.map.get(r.k);if(!b)return'';
+  const p1=b.orden/S.B.total*100,p2=r.orden/S.L.total*100;
+  return`<div class="bar" role="img" aria-label="Posición relativa en la lista: antes ${p1.toFixed(0)} %, ahora ${p2.toFixed(0)} %"><i style="left:${p1}%"></i><i class="now" style="left:${p2}%"></i></div>
+  <div class="mut">Círculo vacío: inicio de curso · círculo lleno: ahora (tramo de la lista, de primeros a últimos)</div>`;
+}
+function cmp(r,o,etiqueta){
+  if(!o)return'';
+  const d=o.ef-r.ef,dor=o.orden-r.orden;
+  const txt=r.estado==='adjudicado'||o.estado==='adjudicado'?'':
+    ` · posición efectiva ${o.ef.toLocaleString('es')} → ${r.ef.toLocaleString('es')} (${d>=0?'avanzas '+d:'retrocedes '+(-d)})`;
+  return`<p class="cmp"><b>${etiqueta}:</b> orden ${o.orden.toLocaleString('es')} → ${r.orden.toLocaleString('es')} (${dor>=0?'+':''}${dor})${txt}</p>`;
+}
+// Adjudicados desde el inicio de curso que estaban detrás de ti en el listado inicial.
+function detras(r,b){
+  const D=S.D;if(!D||!b||r.estado==='adjudicado'||r.estado==='desactivado')return'';
+  const n=D.adj.length,tras=D.adj.filter(a=>a.oini&&a.oini>b.orden);
+  const lst=tras.slice().reverse().slice(0,40).map(a=>`<tr><td>${fecha(a.fecha)}</td><td>${a.oini.toLocaleString('es')}</td><td>${esc(a.esp||'')}</td><td>${esc(a.centro||'')} (${esc(a.loc||'')})</td></tr>`).join('');
+  const peor=D.max?`El adjudicado con peor orden inicial tenía el ${D.max.oini.toLocaleString('es')} (${(D.max.oini-b.orden).toLocaleString('es')} puestos por detrás de ti).`:'';
+  return`<p class="cmp"><b>Adjudicados desde el inicio de curso</b> (${D.diarios.length} listados diarios, hasta el ${fecha(D.diarios[D.diarios.length-1]||D.base)}): ${n.toLocaleString('es')} personas; <b>${tras.length.toLocaleString('es')}</b> estaban por detrás de ti (orden inicial ${b.orden.toLocaleString('es')}). ${tras.length?peor:'Nadie de detrás ha sido adjudicado todavía.'}</p>
+  ${tras.length?`<details><summary class="mut">Ver adjudicados por detrás de ti (últimos 40)</summary><div class="scroll"><table><thead><tr><th>Fecha</th><th>Orden inicial</th><th>Especialidad</th><th>Centro</th></tr></thead><tbody>${lst}</tbody></table></div></details>`:''}
+  <p class="mut">No es un salto de turno: la adjudicación continua es voluntaria y depende de la especialidad, la provincia y lo que pida cada persona. Solo cuenta los listados diarios que tenemos.</p>`;
+}
+function adjInfo(a){
+  if(!a||!a.centro)return'';
+  return`<p class="cmp">${esc(a.centro)} · ${esc(a.localidad)}${a.provincia?' ('+esc(a.provincia)+')':''}<br>${esc(a.especialidad||'')} · ${esc(a.jornada||'')}${a.itinerante?' · itinerante':''}${a.tipo?' · '+esc(a.tipo.replace('_',' ')):''}</p>`;
+}
+function card(r){
+  const adj=r.estado==='adjudicado',sinPos=adj||r.estado==='desactivado';
+  return`<article class="card"><div class="top"><div><div class="name">${esc(r.nombre)}</div><span class="tag t-${r.estado}">${ESTADO[r.estado]||esc(r.estado)}</span></div>
+  <div class="big">${sinPos?r.orden.toLocaleString('es'):r.ef.toLocaleString('es')}<small>${sinPos?'orden en el listado':'posición efectiva'}</small></div></div>
+  <p class="cmp">Orden en el listado: ${r.orden.toLocaleString('es')} de ${S.L.total.toLocaleString('es')}${sinPos?'':` · activos por delante: ${(r.ef-1).toLocaleString('es')}`}</p>
+  ${r.estado==='desactivado'?'<p class="cmp">Desactivado: no se le llama para plazas mientras siga en este estado.</p>':''}
+  ${adjInfo(r.adj)}${track(r)}${cmp(r,S.B&&S.B.map.get(r.k),'Desde inicio de curso ('+(S.base?fecha(S.base):'')+')')}${S.P?cmp(r,S.P.map.get(r.k),'Desde el listado del '+fecha(S.prev)):''}${detras(r,S.B&&S.B.map.get(r.k))}
+  ${r.dup>1?`<p class="warn">Hay ${r.dup} personas con este mismo nombre en la lista. Comprueba cuál eres por el orden.</p>`:''}</article>`;
+}
+function goneCard(r){
+  // r es una fila del listado de inicio de curso que ya no está en el último listado.
+  // Si salió por una adjudicación posterior, está en desde_inicio.json (nombre + orden inicial).
+  const a=S.D&&S.D.idx.get(r.nombre+'|'+r.orden);
+  const tag=a?`Adjudicado el ${fecha(a.fecha)}`:`${ESTADO[r.estado]||esc(r.estado)} en ${fecha(S.base)}`;
+  const body=a?`<p class="cmp"><b>${esc(a.centro||'')}</b> · ${esc(a.loc||'')}${a.prov?' ('+esc(a.prov)+')':''}<br>${esc(a.esp||'')} · orden inicial ${r.orden.toLocaleString('es')} · orden ese día ${a.ord.toLocaleString('es')}</p>`
+    :`<p class="cmp">Ya no aparece en el último listado${r.estado==='adjudicado'?' (adjudicado en el listado de inicio de curso).':'. No consta adjudicación en los listados que tenemos: puede haber salido por otra causa o faltar algún listado.'}</p>${adjInfo(r.adj)}`;
+  return`<article class="card"><div class="name">${esc(r.nombre)}</div><span class="tag t-${a?'adjudicado':r.estado}">${tag}</span>${body}</article>`;
+}
+function buscar(){
+  const q=$('#q').value.trim(),out=$('#res');
+  if(!S){out.innerHTML=q.length>=2?'<p class="hint">Cargando datos, un momento…</p>':'';return}
+  if(q.length<2){out.innerHTML='';return}
+  const isNum=/^\d+$/.test(q),toks=norm(q).split(/[\s,]+/).filter(Boolean);
+  const hits=S.L.rows.filter(r=>isNum?r.orden===+q:toks.every(t=>r.n.includes(t)));
+  let html=hits.slice(0,30).map(card).join('');
+  if(!isNum&&S.B)html+=S.B.rows.filter(r=>!S.L.map.has(r.k)&&toks.every(t=>r.n.includes(t))).slice(0,15).map(goneCard).join('');
+  if(hits.length>30)html+=`<p class="hint">Hay ${hits.length} coincidencias; se muestran 30. Añade más apellidos.</p>`;
+  out.innerHTML=html||'<p class="hint">Sin resultados. Prueba con menos palabras o sin tildes.</p>';
+}
+
+function initAdj(){
+  const adj=S.L.rows.filter(r=>r.estado==='adjudicado'&&r.adj);S.adj=adj;
+  const fill=(id,vals)=>$(id).insertAdjacentHTML('beforeend',[...new Set(vals)].filter(Boolean).sort((a,b)=>a.localeCompare(b,'es')).map(v=>`<option>${esc(v)}</option>`).join(''));
+  fill('#fp',adj.map(r=>r.adj.provincia));fill('#fe',adj.map(r=>r.adj.especialidad));
+  ['#fq','#fp','#fe'].forEach(s=>$(s).addEventListener('input',renderAdj));renderAdj();
+}
+function renderAdj(){
+  const q=norm($('#fq').value),p=$('#fp').value,e=$('#fe').value;
+  const hits=S.adj.filter(r=>(!p||r.adj.provincia===p)&&(!e||r.adj.especialidad===e)&&(!q||r.n.includes(q)||norm(r.adj.centro||'').includes(q)||norm(r.adj.localidad||'').includes(q)));
+  $('#fcount').textContent=`${hits.length.toLocaleString('es')} adjudicaciones el ${fecha(S.latest)}${hits.length>300?' (se muestran 300)':''}`;
+  $('#ft').innerHTML=hits.slice(0,300).map(r=>`<tr><td>${esc(r.nombre)}</td><td>${r.orden}</td><td>${esc(r.adj.centro)}<br><span class="mut">${esc(r.adj.localidad)} (${esc(r.adj.provincia||'')})</span></td><td>${esc(r.adj.especialidad||'')}</td><td>${esc(r.adj.jornada||'')}</td></tr>`).join('');
+}
+
+function renderMet(){
+  const ds=Object.keys(S.hist).sort(),max=Math.max(1,...ds.map(d=>S.hist[d].adjudicado||0));
+  let kpi='';
+  if(S.B){
+    const both=S.L.rows.filter(r=>r.estado!=='adjudicado'&&S.B.map.has(r.k));
+    const ordAv=both.map(r=>S.B.map.get(r.k).orden-r.orden),efAv=both.map(r=>S.B.map.get(r.k).ef-r.ef);
+    kpi=`<div class="kpi"><div class="card"><div class="big">${med(efAv)?.toLocaleString('es')}</div><div class="mut">Mediana de puestos efectivos avanzados desde ${fecha(S.base)}</div></div>
+    <div class="card"><div class="big">${med(ordAv)?.toLocaleString('es')}</div><div class="mut">Mediana de puestos de orden avanzados</div></div></div>`;
+  }
+  if(S.D&&S.D.adj.length){
+    const por={};S.D.adj.forEach(a=>{if(a.oini)(por[a.fecha]=por[a.fecha]||[]).push(a.oini)});
+    const fs=Object.keys(por).sort(),mx=Math.max(...fs.map(d=>Math.max(...por[d])));
+    kpi+=`<h2 style="font:600 1.1rem Georgia,serif">Hasta dónde llega la adjudicación (orden en el listado de inicio)</h2><div class="bars">${fs.map(d=>{const v=por[d];return`<div><span style="width:84px">${fecha(d)}</span><b style="width:${Math.max(...v)/mx*50}%"></b>peor ${Math.max(...v).toLocaleString('es')} · mediana ${med(v).toLocaleString('es')}</div>`}).join('')}</div>
+    <p class="hint">Cada barra es el peor orden inicial entre las personas adjudicadas ese día.</p>`;
+  }
+  const act=S.L.activos,des=S.L.rows.filter(r=>r.estado==='desactivado').length;
+  kpi+=`<div class="card"><b>${act.toLocaleString('es')}</b> personas activas y <b>${des.toLocaleString('es')}</b> desactivadas en el último listado (el ${(des/S.L.total*100).toFixed(0)} % de la lista no puede recibir plaza).</div>`;
+  const bars=ds.map(d=>{const v=S.hist[d].adjudicado||0;return`<div><span style="width:84px">${fecha(d)}</span><b style="width:${v/max*60}%"></b>${v.toLocaleString('es')}</div>`}).join('');
+  $('#met').innerHTML=kpi+`<h2 style="font:600 1.1rem Georgia,serif">Adjudicados por listado</h2><div class="bars">${bars||'<p class="hint">Aún no hay histórico.</p>'}</div>
+  <p class="hint">El listado de inicio de curso incluye todas las adjudicaciones de julio; los diarios (martes y jueves) solo las de ese día.</p>`;
+}
+
+document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',x===b));
+  ['buscar','adj','met'].forEach(id=>$('#'+id).hidden=id!==b.dataset.t);
+}));
+$('#q').addEventListener('input',buscar);
+init();
+</script>
+</body>
+</html>
