@@ -91,3 +91,9 @@ def test_filename_inicio():
     assert date_cuerpo_from_name("ini_2026_adj_int_mae.pdf") == (None, "mae")
     assert kind_from_name("ini_2026_adj_int_mae.pdf") == "inicio_curso"
     assert kind_from_name("261105_lis_mae.pdf") == "diario"
+
+
+def test_cuerpo_no_permitido_se_ignora(tmp_path):
+    from scraper.build import process
+    # no debe parsear ni escribir nada: el cuerpo "sec" está fuera de CUERPOS
+    assert process(str(tmp_path / "no_existe.pdf"), "261105_lis_sec.pdf") == 0
