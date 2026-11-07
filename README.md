@@ -32,3 +32,12 @@ python -m scraper.build --pdf 261105_lis_mae.pdf
 Para probar en local: `python -m http.server` y abrir http://localhost:8000
 - Posición efectiva = 1 + personas por delante que no están desactivadas ni adjudicadas.
 - Las personas se enlazan entre listados por nombre (+ nº de aparición si hay homónimos), porque el orden cambia cada día.
+
+## Descubrimiento automático de listados
+1. Rastrea las páginas de `SOURCES` (enlaces a PDF) y aprende el número de carpeta de cada enlace.
+2. Prueba `https://ceice.gva.es/documents/162909733/<carpeta>/<AAMMDD>_lis_mae.pdf` para cada día laborable
+   sin listado desde `PROBE_START`, con las carpetas conocidas (`KNOWN_FOLDERS` + las aprendidas en `data/state.json`).
+3. Respeta `robots.txt`; si no lo permite, no descarga y lo dice en el log.
+
+Si sale una carpeta nueva que el rastreo no ve: lanza *Run workflow* con la URL del PDF en `pdf_url` una vez;
+el bot aprende la carpeta y encuentra los siguientes solo.
