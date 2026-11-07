@@ -23,6 +23,9 @@ SUBPAGE_KEYWORDS = ("resoluc", "adjudic", "borsa", "bolsa", "interin")
 LISTING_RE = re.compile(r"(\d{6})_lis_([a-z]+)\.pdf", re.IGNORECASE)
 INICIO_RE = re.compile(r"ini_(\d{4})_adj_int_([a-z]+)\.pdf", re.IGNORECASE)
 
+# Cuerpos que se procesan (mae = maestros). Secundaria (sec) queda fuera por ahora.
+CUERPOS = ("mae",)
+
 USER_AGENT = "interinos-gva-bot/0.1 (proyecto open source; consulta educativa)"
 REQUEST_TIMEOUT = 60
 REQUEST_DELAY_SECONDS = 1.0     # cortesía con el servidor

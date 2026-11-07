@@ -64,8 +64,11 @@ def store_snapshot(rows: list[dict], fecha: str, cuerpo: str, kind: str = "diari
 
 
 def process(path: str, name: str) -> int:
-    rows, header_date = parse_pdf(path)
     fecha, cuerpo = date_cuerpo_from_name(name)
+    if cuerpo not in config.CUERPOS:
+        print(f"IGNORADO {name}: cuerpo {cuerpo!r} no está en CUERPOS {config.CUERPOS}")
+        return 0
+    rows, header_date = parse_pdf(path)
     fecha = fecha or header_date
     if not rows or not fecha or not cuerpo:
         print(f"SALTADO {name}: filas={len(rows)} fecha={fecha} cuerpo={cuerpo}")
@@ -123,6 +126,18 @@ def main() -> None:
         except Exception as e:  # noqa: BLE001
             print(f"AVISO descarga automática falló: {type(e).__name__}: {e}")
     _dump(config.STATE_FILE, state, indent=1)
+    prune_cuerpos()
+
+
+def prune_cuerpos() -> None:
+    """Quita de index.json e history.json los cuerpos no permitidos (p.ej. sec)."""
+    idx = _load(config.INDEX_FILE, None)
+    if idx:
+        idx["cuerpos"] = {k: v for k, v in idx["cuerpos"].items() if k in config.CUERPOS}
+        _dump(config.INDEX_FILE, idx, indent=1)
+    hist = _load(config.HISTORY_FILE, None)
+    if hist:
+        _dump(config.HISTORY_FILE, {k: v for k, v in hist.items() if k in config.CUERPOS}, indent=1)
 
 
 if __name__ == "__main__":
