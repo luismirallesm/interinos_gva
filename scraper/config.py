@@ -26,6 +26,15 @@ INICIO_RE = re.compile(r"ini_(\d{4})_adj_int_([a-z]+)\.pdf", re.IGNORECASE)
 # Cuerpos que se procesan (mae = maestros). Secundaria (sec) queda fuera por ahora.
 CUERPOS = ("mae",)
 
+# Descubrimiento por patrón de URL (sin saber qué día salió cada listado):
+#   https://ceice.gva.es/documents/162909733/<carpeta>/<AAMMDD>_lis_<cuerpo>.pdf
+# El número de carpeta cambia de vez en cuando; se prueban las conocidas y se aprenden nuevas.
+DOC_URL = "https://ceice.gva.es/documents/162909733/{folder}/{name}"
+KNOWN_FOLDERS = (414354213, 415637604, 416766492)   # 10/09, 22-29/10, 03-05/11
+PROBE_START = "2026-07-16"       # día siguiente al listado de inicio de curso
+PROBE_DELAY_SECONDS = 0.5
+RECHECK_DAYS = 7                 # un día sin listado se vuelve a probar durante estos días
+
 USER_AGENT = "interinos-gva-bot/0.1 (proyecto open source; consulta educativa)"
 REQUEST_TIMEOUT = 60
 REQUEST_DELAY_SECONDS = 1.0     # cortesía con el servidor
