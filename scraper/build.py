@@ -19,7 +19,7 @@ import os
 from collections import Counter
 
 from . import config
-from .fetch import discover_links, download
+from .fetch import discover_links, download, folder_of, probe_listings
 from .parse_pdf import parse_pdf
 
 
@@ -63,6 +63,50 @@ def store_snapshot(rows: list[dict], fecha: str, cuerpo: str, kind: str = "diari
     print(f"{cuerpo} {fecha}: {len(rows)} filas {dict(counts)}")
 
 
+def _keyed(rows: list[dict]) -> list[dict]:
+    """Clave nombre#n-ésima aparición: enlaza personas entre listados (homónimos)."""
+    seen: dict[str, int] = {}
+    for r in rows:
+        seen[r["nombre"]] = seen.get(r["nombre"], 0) + 1
+        r["_k"] = f'{r["nombre"]}#{seen[r["nombre"]]}'
+    return rows
+
+
+def compute_since_start(cuerpo: str, data_dir=None):
+    """Quién ha sido adjudicado en los diarios posteriores al inicio de curso, con su orden inicial.
+
+    Salida: data/<cuerpo>/desde_inicio.json con filas
+    [nombre, orden_inicio, pos_efectiva_inicio, fecha, orden_ese_dia, provincia, localidad, centro, especialidad]
+    """
+    data_dir = data_dir or config.DATA_DIR
+    snaps = [json.loads(p.read_text("utf-8")) for p in sorted((data_dir / cuerpo).glob("????-??-??.json"))]
+    bases = [x for x in snaps if x.get("tipo") == "inicio_curso"]
+    if not bases:
+        return None
+    base = bases[-1]
+    ini, act = {}, 0
+    for r in _keyed(base["rows"]):
+        ini[r["_k"]] = (r["orden"], act + 1)
+        if r["estado"] not in ("desactivado", "adjudicado"):
+            act += 1
+    diarios = [x for x in snaps if x.get("tipo") == "diario" and x["fecha"] > base["fecha"]]
+    first: dict = {}
+    for x in diarios:
+        for r in _keyed(x["rows"]):
+            if r["estado"] == "adjudicado" and r["_k"] not in first:
+                first[r["_k"]] = (x["fecha"], r)
+    rows = []
+    for k, (fecha, r) in first.items():
+        o, a = ini.get(k, (None, None))
+        adj = r.get("adj", {})
+        rows.append([r["nombre"], o, a, fecha, r["orden"], adj.get("provincia"), adj.get("localidad"), adj.get("centro"), adj.get("especialidad")])
+    rows.sort(key=lambda e: (e[3], e[1] or 0))
+    out = {"base": base["fecha"], "diarios": [x["fecha"] for x in diarios], "adjudicados": rows}
+    _dump(data_dir / cuerpo / "desde_inicio.json", out)
+    print(f"{cuerpo}: {len(rows)} adjudicados desde {base['fecha']} en {len(diarios)} listados diarios")
+    return out
+
+
 def process(path: str, name: str) -> int:
     fecha, cuerpo = date_cuerpo_from_name(name)
     if cuerpo not in config.CUERPOS:
@@ -84,6 +128,8 @@ def main() -> None:
 
     if args.pdf:
         process(args.pdf, os.path.basename(args.pdf))
+        for c in config.CUERPOS:
+            compute_since_start(c)
         return
 
     state = _load(config.STATE_FILE, {"processed": {}})
@@ -115,18 +161,52 @@ def main() -> None:
 
     # 3) Descarga automática (opcional; un fallo aquí no rompe el resto)
     if os.environ.get("SCRAPE_WEB", "1") == "1":
+        folders = set(config.KNOWN_FOLDERS) | set(state.get("folders", []))
+        urls_done = {v["url"] for v in state["processed"].values()}
+
+        def take(url: str) -> None:
+            if url in urls_done:
+                return
+            f = folder_of(url)
+            if f:
+                folders.add(f)
+            listing = download(url)
+            n = 0 if listing.sha256 in state["processed"] else process(listing.path, url.split("?")[0].rsplit("/", 1)[-1])
+            if n:
+                state["processed"][listing.sha256] = {"url": url, "rows": n}
+
+        # 3a) enlaces de las páginas del portal (descubre carpetas nuevas)
         try:
             for url in discover_links():
-                listing = download(url)
-                if listing.sha256 in state["processed"]:
-                    continue
-                n = process(listing.path, url.split("?")[0].rsplit("/", 1)[-1])
-                if n:
-                    state["processed"][listing.sha256] = {"url": url, "rows": n}
+                take(url)
         except Exception as e:  # noqa: BLE001
-            print(f"AVISO descarga automática falló: {type(e).__name__}: {e}")
+            print(f"AVISO rastreo de páginas falló: {type(e).__name__}: {e}")
+
+        # 3b) búsqueda por patrón de URL para los días que falten
+        try:
+            idx = _load(config.INDEX_FILE, {"cuerpos": {}})
+            skip = state.setdefault("sin_listado", {})
+            for c in config.CUERPOS:
+                known = set(idx["cuerpos"].get(c, {}).get("fechas", []))
+                found, missing = probe_listings(c, known, folders, skip)
+                for url, listing in found:
+                    f = folder_of(url)
+                    if f:
+                        folders.add(f)
+                    n = 0 if listing.sha256 in state["processed"] else process(listing.path, url.rsplit("/", 1)[-1])
+                    if n:
+                        state["processed"][listing.sha256] = {"url": url, "rows": n}
+                for iso in [k for k in skip if k not in missing]:
+                    skip.pop(iso)           # ya encontrado o ya conocido
+                skip.update(missing)
+                print(f"patrón: {len(found)} encontrados, {len(missing)} días sin listado, carpetas {sorted(folders, reverse=True)}")
+        except Exception as e:  # noqa: BLE001
+            print(f"AVISO búsqueda por patrón falló: {type(e).__name__}: {e}")
+        state["folders"] = sorted(folders)
     _dump(config.STATE_FILE, state, indent=1)
     prune_cuerpos()
+    for c in config.CUERPOS:
+        compute_since_start(c)
 
 
 def prune_cuerpos() -> None:
