@@ -1,6 +1,7 @@
 """Descubre y descarga PDFs de listados diarios publicados por la GVA."""
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import time
 import urllib.robotparser
@@ -77,15 +78,69 @@ def discover_links(session: requests.Session | None = None) -> list[str]:
     return sorted(found)
 
 
+def _save(content: bytes, url: str) -> Listing:
+    digest = hashlib.sha256(content).hexdigest()
+    config.RAW_DIR.mkdir(parents=True, exist_ok=True)
+    path = config.RAW_DIR / f"{digest[:16]}.pdf"
+    path.write_bytes(content)
+    return Listing(url=url, path=str(path), sha256=digest)
+
+
 def download(url: str, session: requests.Session | None = None) -> Listing:
     session = session or _session()
     if not allowed_by_robots(url, session):
         raise PermissionError(f"robots.txt no permite {url}")
     resp = session.get(url, timeout=config.REQUEST_TIMEOUT)
     resp.raise_for_status()
-    digest = hashlib.sha256(resp.content).hexdigest()
-    config.RAW_DIR.mkdir(parents=True, exist_ok=True)
-    path = config.RAW_DIR / f"{digest[:16]}.pdf"
-    path.write_bytes(resp.content)
+    listing = _save(resp.content, url)
     time.sleep(config.REQUEST_DELAY_SECONDS)
-    return Listing(url=url, path=str(path), sha256=digest)
+    return listing
+
+
+def folder_of(url: str) -> int | None:
+    m = config.DOC_URL.split("{folder}")[0]
+    if url.startswith(m):
+        part = url[len(m):].split("/")[0]
+        return int(part) if part.isdigit() else None
+    return None
+
+
+def probe_listings(cuerpo, known_dates, folders, skip, today=None, session=None):
+    """Prueba URLs AAMMDD_lis_<cuerpo>.pdf para cada día laborable aún sin listado.
+
+    skip: {fecha: nº de carpetas ya probadas}; un día sin listado solo se salta si
+    ya se probaron todas las carpetas actuales y tiene más de RECHECK_DAYS días.
+    Devuelve (encontrados [(url, Listing)], sin_listado {fecha: n_carpetas}).
+    """
+    session = session or _session()
+    today = today or dt.date.today()
+    folders = sorted(set(folders), reverse=True)        # las más nuevas primero
+    sample = config.DOC_URL.format(folder=folders[0], name=f"000000_lis_{cuerpo}.pdf")
+    if not allowed_by_robots(sample, session):
+        print("robots.txt NO permite /documents/: se omite la búsqueda por patrón")
+        return [], {}
+    found, missing = [], {}
+    d = dt.date.fromisoformat(config.PROBE_START)
+    while d <= today:
+        iso = d.isoformat()
+        old = (today - d).days > config.RECHECK_DAYS
+        if d.weekday() < 5 and iso not in known_dates and not (old and skip.get(iso, 0) >= len(folders)):
+            name = f"{d:%y%m%d}_lis_{cuerpo}.pdf"
+            hit = None
+            for folder in folders:
+                url = config.DOC_URL.format(folder=folder, name=name)
+                try:
+                    r = session.get(url, timeout=config.REQUEST_TIMEOUT)
+                except requests.RequestException as e:
+                    print(f"error de red en {url}: {e}")
+                    continue
+                time.sleep(config.PROBE_DELAY_SECONDS)
+                if r.status_code == 200 and r.content[:5] == b"%PDF-":
+                    hit = (url, r.content)
+                    break
+            if hit:
+                found.append((hit[0], _save(hit[1], hit[0])))
+            else:
+                missing[iso] = len(folders)
+        d += dt.timedelta(days=1)
+    return found, missing
