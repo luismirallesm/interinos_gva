@@ -147,9 +147,18 @@ function cmp(r,o,etiqueta){
 function detras(r,b){
   const D=S.D;if(!D||!b||r.estado==='adjudicado'||r.estado==='desactivado')return'';
   const n=D.adj.length,tras=D.adj.filter(a=>a.oini&&a.oini>b.orden);
+  // Último listado diario, todo medido en orden del listado inicial (las altas posteriores no tienen orden inicial).
+  const uf=D.diarios[D.diarios.length-1],ult=D.adj.filter(a=>a.fecha===uf&&a.oini);
+  let ultTxt='';
+  if(ult.length){
+    const w=ult.reduce((m,a)=>a.oini>m.oini?a:m),nt=ult.filter(a=>a.oini>b.orden).length,dist=w.oini-b.orden;
+    ultTxt=`<p class="cmp"><b>Último listado (${fecha(uf)})</b>: el adjudicado más atrasado tenía el nº <b>${w.oini.toLocaleString('es')}</b> del listado inicial (${esc(w.esp||'')}). `+
+      (dist>0?`Son <b>${dist.toLocaleString('es')} puestos por detrás de ti</b> en el listado inicial; ese día se adjudicó a ${nt.toLocaleString('es')} ${nt===1?'persona':'personas'} de detrás de ti.`
+             :`Nadie de detrás de ti fue adjudicado ese día (estaba ${(-dist).toLocaleString('es')} puestos por delante).`)+`</p>`;
+  }
   const lst=tras.slice().reverse().slice(0,40).map(a=>`<tr><td>${fecha(a.fecha)}</td><td>${a.oini.toLocaleString('es')}</td><td>${esc(a.esp||'')}</td><td>${esc(a.centro||'')} (${esc(a.loc||'')})</td></tr>`).join('');
-  const peor=D.max?`El adjudicado con peor orden inicial tenía el ${D.max.oini.toLocaleString('es')} (${(D.max.oini-b.orden).toLocaleString('es')} puestos por detrás de ti).`:'';
-  return`<p class="cmp"><b>Adjudicados desde el inicio de curso</b> (${D.diarios.length} listados diarios, hasta el ${fecha(D.diarios[D.diarios.length-1]||D.base)}): ${n.toLocaleString('es')} personas; <b>${tras.length.toLocaleString('es')}</b> estaban por detrás de ti (orden inicial ${b.orden.toLocaleString('es')}). ${tras.length?peor:'Nadie de detrás ha sido adjudicado todavía.'}</p>
+  const peor=D.max?`El más atrasado en todo este tiempo tenía el ${D.max.oini.toLocaleString('es')} (adjudicado el ${fecha(D.max.fecha)}).`:'';
+  return`${ultTxt}<p class="cmp"><b>Acumulado desde el inicio de curso</b> (${D.diarios.length} listados diarios, hasta el ${fecha(D.diarios[D.diarios.length-1]||D.base)}): ${n.toLocaleString('es')} personas; <b>${tras.length.toLocaleString('es')}</b> estaban por detrás de ti (orden inicial ${b.orden.toLocaleString('es')}). ${tras.length?peor:'Nadie de detrás ha sido adjudicado todavía.'}</p>
   ${tras.length?`<details><summary class="mut">Ver adjudicados por detrás de ti (últimos 40)</summary><div class="scroll"><table><thead><tr><th>Fecha</th><th>Orden inicial</th><th>Especialidad</th><th>Centro</th></tr></thead><tbody>${lst}</tbody></table></div></details>`:''}
   <p class="mut">No es un salto de turno: la adjudicación continua es voluntaria y depende de la especialidad, la provincia y lo que pida cada persona. Solo cuenta los listados diarios que tenemos.</p>`;
 }
