@@ -25,6 +25,7 @@ input,select{font:inherit;color:var(--ink);background:var(--card);border:1px sol
 .big{font:600 2.4rem/1 Georgia,serif;color:var(--acc)}
 .big small{font:400 .85rem system-ui;color:var(--mut);display:block;margin-top:4px}
 .res{margin:10px 0 0;padding:10px 12px;border-radius:6px;background:var(--bg);border-left:4px solid var(--mut)}.res.si{border-color:var(--acc)}
+.bolsas ul{margin:6px 0 0;padding-left:18px}.bolsas li{margin:4px 0}.bolsas .si{color:var(--acc);font-weight:600}.bolsas .no{font-weight:600}
 .tag{display:inline-block;font-size:.8rem;border:1px solid currentColor;border-radius:4px;padding:0 6px;margin-top:4px}
 .t-adjudicado{color:var(--ok)}.t-desactivado{color:var(--mut)}.t-no_adjudicado,.t-ha_participado,.t-no_ha_participado{color:var(--warn)}
 .bar{position:relative;height:6px;background:var(--line);border-radius:3px;margin:16px 6px 8px}
@@ -107,17 +108,22 @@ async function init(){
     const snap=async d=>annotate((await j(`data/mae/${d}.json`)).rows);
     // Todo se pide en paralelo; la búsqueda se activa en cuanto llega el último listado.
     const pB=base?snap(base).catch(()=>null):null,pP=prev?snap(prev).catch(()=>null):null;
-    const pD=j('data/mae/desde_inicio.json').catch(()=>null),pH=j('data/history.json').catch(()=>({}));
+    const pD=j('data/mae/desde_inicio.json').catch(()=>null),pHab=j('data/mae/habilitaciones.json').catch(()=>null),pH=j('data/history.json').catch(()=>({}));
     const L=await snap(latest);
     S={latest,base,prev,L,B:null,P:null,hist:{},D:null};
     const txt=`Último listado: ${fecha(latest)} · ${L.total.toLocaleString('es')} maestros en la lista`;
     $('#estado').textContent=txt+' · cargando histórico…';
     initAdj();buscar();
-    const [B,P,H,D]=await Promise.all([pB,pP,pH,pD]);
-    if(D){D.adj=D.adjudicados.map(e=>({nombre:e[0],oini:e[1],efini:e[2],fecha:e[3],ord:e[4],prov:e[5],loc:e[6],centro:e[7],esp:e[8],salt:e[9]}));
+    const [B,P,H,D,Hab]=await Promise.all([pB,pP,pH,pD,pHab]);
+    if(D){D.adj=D.adjudicados.map(e=>({nombre:e[0],oini:e[1],efini:e[2],fecha:e[3],ord:e[4],prov:e[5],loc:e[6],centro:e[7],esp:e[8],salt:e[9],cod:e[10]}));
       D.idx=new Map(D.adj.filter(a=>a.oini).map(a=>[a.nombre+'|'+a.oini,a]));
       D.max=D.adj.reduce((m,a)=>a.oini&&(!m||a.oini>m.oini)?a:m,null);}
-    Object.assign(S,{B,P,hist:H.mae||{},D});
+    // Bolsas por especialidad: órdenes iniciales de quien tiene cada habilitación activa.
+    let bolsas=null;
+    if(Hab&&B&&Hab.base===base){bolsas={};
+      B.rows.forEach(r=>{r.hab=(Hab.hab[r.orden-1]||'').split(' ').filter(Boolean);
+        r.hab.forEach(c=>{if(!c.endsWith('*'))(bolsas[c]=bolsas[c]||[]).push(r.orden)})});}
+    Object.assign(S,{B,P,hist:H.mae||{},D,bolsas,codigos:Hab&&Hab.codigos});
     $('#estado').textContent=txt;
     renderMet();renderAdj();buscar();
   }catch(e){
@@ -136,6 +142,27 @@ function ultimo(oini){
     ?`<p class="res si">Sí. En la adjudicación del ${fecha(uf)} adjudicaron a <b>${N(nt)}</b> ${nt===1?'persona':'personas'} por detrás de ti. La más atrasada tenía el nº <b>${N(w.oini)}</b>: <b>${N(dif)}</b> números por detrás de ti.</p>`
     :`<p class="res no">No. En la adjudicación del ${fecha(uf)} nadie por detrás de ti obtuvo plaza. La más atrasada tenía el nº <b>${N(w.oini)}</b>, ${N(-dif)} números por delante de ti.</p>`;
 }
+// Nº dentro de una bolsa = personas con esa habilitación con orden inicial <= o (búsqueda binaria).
+function enBolsa(lst,o){let lo=0,hi=lst.length;while(lo<hi){const m=(lo+hi)>>1;if(lst[m]<=o)lo=m+1;else hi=m}return lo}
+function porBolsa(b){
+  if(!S.bolsas||!b.hab||!b.hab.length)return'';
+  const D=S.D,uf=D&&D.diarios[D.diarios.length-1],N=x=>x.toLocaleString('es');
+  const filas=b.hab.map(c=>{
+    const cod=c.replace('*',''),nom=esc((S.codigos&&S.codigos[cod])||cod);
+    if(c.endsWith('*'))return`<li><b>${nom}</b>: habilitación desactivada.</li>`;
+    const lst=S.bolsas[cod],yo=enBolsa(lst,b.orden);
+    let txt=`nº <b>${N(yo)}</b> de ${N(lst.length)}. `;
+    const ult=D?D.adj.filter(a=>a.fecha===uf&&a.oini&&a.cod===cod):[];
+    if(!ult.length)txt+='En el último listado no se adjudicó ninguna plaza de esta especialidad.';
+    else{
+      const w=ult.reduce((m,a)=>a.oini>m.oini?a:m),nt=ult.filter(a=>a.oini>b.orden).length,pw=enBolsa(lst,w.oini),dif=pw-yo;
+      txt+=nt?`<span class="si">Sí</span>: ${N(nt)} por detrás de ti. El más atrasado, nº ${N(pw)} de la bolsa (orden inicial ${N(w.oini)}): <b>${N(dif)}</b> puestos por detrás.`
+             :`<span class="no">No</span> hubo nadie por detrás de ti. El más atrasado, nº ${N(pw)} de la bolsa (orden inicial ${N(w.oini)}): ${N(-dif)} puestos por delante.`;
+    }
+    return`<li><b>${nom}</b>: ${txt}</li>`;
+  }).join('');
+  return`<div class="bolsas"><p class="mut">Por bolsa (tu nº dentro de cada una, según el listado inicial):</p><ul>${filas}</ul></div>`;
+}
 function adjInfo(a){
   if(!a||!a.centro)return'';
   return`<p class="cmp">${esc(a.centro)} · ${esc(a.localidad)}${a.provincia?' ('+esc(a.provincia)+')':''}<br>${esc(a.especialidad||'')} · ${esc(a.jornada||'')}</p>`;
@@ -146,7 +173,7 @@ function card(r){
   let body='';
   if(r.estado==='adjudicado')body=adjInfo(r.adj);
   else if(r.estado==='desactivado')body='<p class="cmp">Desactivado: no recibe plazas mientras siga así.</p>';
-  else if(b)body=ultimo(b.orden);
+  else if(b)body=ultimo(b.orden)+porBolsa(b);
   return`<article class="card"><div class="top"><div><div class="name">${esc(r.nombre)}</div><span class="tag t-${r.estado}">${ESTADO[r.estado]||esc(r.estado)}</span></div>${num}</div>
   ${body}${r.dup>1?`<p class="warn">Hay ${r.dup} personas con este nombre. Comprueba cuál eres por el orden inicial.</p>`:''}</article>`;
 }

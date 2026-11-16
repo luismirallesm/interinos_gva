@@ -15,6 +15,8 @@ Consulta gratuita y open source de adjudicaciones de personal docente interino d
 - `data/index.json`: cuerpos y fechas disponibles.
 - `data/history.json`: totales por estado y día.
 - `data/state.json`: hashes de PDFs ya procesados.
+- `data/<cuerpo>/participantes.json`: lista de participantes de inicio de curso (`ini_<año>_par_def_int_lis_<cuerpo>.pdf`, página *participantes2*) con las habilitaciones de cada persona (INF, PRI, ING, FRA, EF, PT, AL, MUS; `*` = desactivada).
+- `data/<cuerpo>/habilitaciones.json`: esas habilitaciones cruzadas con el listado inicial (`hab[orden_inicial-1]`). Sirve para las bolsas por especialidad.
 
 ## Subir un listado a mano (modo seguro)
 Sube el PDF a la carpeta `inbox/` (GitHub: Add file → Upload files). El workflow se lanza solo, genera `data/` y hace commit.
