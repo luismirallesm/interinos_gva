@@ -25,7 +25,12 @@ input,select{font:inherit;color:var(--ink);background:var(--card);border:1px sol
 .big{font:600 2.4rem/1 Georgia,serif;color:var(--acc)}
 .big small{font:400 .85rem system-ui;color:var(--mut);display:block;margin-top:4px}
 .res{margin:10px 0 0;padding:10px 12px;border-radius:6px;background:var(--bg);border-left:4px solid var(--mut)}.res.si{border-color:var(--acc)}
-.bolsas ul{margin:6px 0 0;padding-left:18px}.bolsas li{margin:4px 0}.bolsas .si{color:var(--acc);font-weight:600}.bolsas .no{font-weight:600}
+.bolsa{--c:var(--mut);margin:12px 0 0;padding:10px 14px;border:1px solid var(--line);border-left:5px solid var(--c);border-radius:8px;background:var(--bg)}
+.bolsa h3{margin:0 0 6px;font:600 1rem Georgia,serif;color:var(--c);border-bottom:1px solid var(--c);padding-bottom:4px}
+.bolsa dl{margin:0}.bolsa dl div{display:flex;justify-content:space-between;gap:12px;padding:2px 0}.bolsa dt{color:var(--mut)}.bolsa dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+.bolsa .si{color:var(--acc)}
+.b-GEN{--c:var(--ink)}.b-PRI{--c:#b03a2e}.b-INF{--c:#a8550f}.b-AL{--c:#2e7d32}.b-PT{--c:#6a3d9a}.b-ING{--c:#1f5fa8}.b-FRA{--c:#0d6e74}.b-EF{--c:#8a6d00}.b-MUS{--c:#a3306b}
+@media(prefers-color-scheme:dark){.b-PRI{--c:#ef8a80}.b-INF{--c:#f0a35e}.b-AL{--c:#7ccf80}.b-PT{--c:#b99be0}.b-ING{--c:#7fb2f0}.b-FRA{--c:#5fc6cc}.b-EF{--c:#e0c25a}.b-MUS{--c:#ec8fbf}}
 .tag{display:inline-block;font-size:.8rem;border:1px solid currentColor;border-radius:4px;padding:0 6px;margin-top:4px}
 .t-adjudicado{color:var(--ok)}.t-desactivado{color:var(--mut)}.t-no_adjudicado,.t-ha_participado,.t-no_ha_participado{color:var(--warn)}
 .bar{position:relative;height:6px;background:var(--line);border-radius:3px;margin:16px 6px 8px}
@@ -132,36 +137,31 @@ async function init(){
   }
 }
 
-// Último listado diario, medido en orden del listado inicial (las altas posteriores no tienen orden inicial).
-function ultimo(oini){
-  const D=S.D;if(!D||!D.diarios.length)return'';
-  const uf=D.diarios[D.diarios.length-1],ult=D.adj.filter(a=>a.fecha===uf&&a.oini);
-  if(!ult.length)return'';
-  const w=ult.reduce((m,a)=>a.oini>m.oini?a:m),nt=ult.filter(a=>a.oini>oini).length,dif=w.oini-oini,N=x=>x.toLocaleString('es');
-  return nt
-    ?`<p class="res si">Sí. En la adjudicación del ${fecha(uf)} adjudicaron a <b>${N(nt)}</b> ${nt===1?'persona':'personas'} por detrás de ti. La más atrasada tenía el nº <b>${N(w.oini)}</b>: <b>${N(dif)}</b> números por detrás de ti.</p>`
-    :`<p class="res no">No. En la adjudicación del ${fecha(uf)} nadie por detrás de ti obtuvo plaza. La más atrasada tenía el nº <b>${N(w.oini)}</b>, ${N(-dif)} números por delante de ti.</p>`;
-}
 // Nº dentro de una bolsa = personas con esa habilitación con orden inicial <= o (búsqueda binaria).
 function enBolsa(lst,o){let lo=0,hi=lst.length;while(lo<hi){const m=(lo+hi)>>1;if(lst[m]<=o)lo=m+1;else hi=m}return lo}
+const NOMBRE_BOLSA={INF:'infantil',PRI:'primaria',ING:'inglés',FRA:'francés',EF:'educación física',PT:'pedagogía terapéutica',AL:'audición y lenguaje',MUS:'música'};
+// Tarjeta de una bolsa, todo en números del listado inicial. cod=null: bolsa general (todas las especialidades).
+function bolsaCard(b,cod,desact){
+  const N=x=>x.toLocaleString('es'),D=S.D,uf=D&&D.diarios.length?D.diarios[D.diarios.length-1]:null;
+  const lst=cod?S.bolsas[cod]||[]:null,pos=o=>cod?enBolsa(lst,o):o,dm=uf?fecha(uf).slice(0,5):'—';
+  const tit=cod?'Bolsa de '+NOMBRE_BOLSA[cod]:'Bolsa general';
+  const fila=(k,v)=>`<div><dt>${k}</dt><dd>${v}</dd></div>`;
+  if(desact)return`<section class="bolsa b-${cod}"><h3>${tit}</h3><p class="cmp">Habilitación desactivada.</p></section>`;
+  let f=fila('Total interinos/as',N(cod?lst.length:S.B.total))+fila('Tu posición',N(pos(b.orden)));
+  const ult=uf?D.adj.filter(a=>a.fecha===uf&&a.oini&&(!cod||a.cod===cod)):[];
+  if(!ult.length)f+=fila(`Último adjudicado (${dm})`,'ninguno');
+  else{
+    const w=ult.reduce((m,a)=>a.oini>m.oini?a:m),pw=pos(w.oini),dif=pw-pos(b.orden),nt=ult.filter(a=>a.oini>b.orden).length;
+    f+=fila(`Último adjudicado (${dm})`,N(pw))
+      +fila('Entre tú y el último',dif>0?`<b class="si">${N(dif)} detrás</b>`:`${N(-dif)} delante`)
+      +fila('Adjudicados por detrás de ti',nt?`<b class="si">${N(nt)}</b>`:'0');
+  }
+  return`<section class="bolsa b-${cod||'GEN'}"><h3>${tit}</h3><dl>${f}</dl></section>`;
+}
 function porBolsa(b){
-  if(!S.bolsas||!b.hab||!b.hab.length)return'';
-  const D=S.D,uf=D&&D.diarios[D.diarios.length-1],N=x=>x.toLocaleString('es');
-  const filas=b.hab.map(c=>{
-    const cod=c.replace('*',''),nom=esc((S.codigos&&S.codigos[cod])||cod);
-    if(c.endsWith('*'))return`<li><b>${nom}</b>: habilitación desactivada.</li>`;
-    const lst=S.bolsas[cod],yo=enBolsa(lst,b.orden);
-    let txt=`nº <b>${N(yo)}</b> de ${N(lst.length)}. `;
-    const ult=D?D.adj.filter(a=>a.fecha===uf&&a.oini&&a.cod===cod):[];
-    if(!ult.length)txt+='En el último listado no se adjudicó ninguna plaza de esta especialidad.';
-    else{
-      const w=ult.reduce((m,a)=>a.oini>m.oini?a:m),nt=ult.filter(a=>a.oini>b.orden).length,pw=enBolsa(lst,w.oini),dif=pw-yo;
-      txt+=nt?`<span class="si">Sí</span>: ${N(nt)} por detrás de ti. El más atrasado, nº ${N(pw)} de la bolsa (orden inicial ${N(w.oini)}): <b>${N(dif)}</b> puestos por detrás.`
-             :`<span class="no">No</span> hubo nadie por detrás de ti. El más atrasado, nº ${N(pw)} de la bolsa (orden inicial ${N(w.oini)}): ${N(-dif)} puestos por delante.`;
-    }
-    return`<li><b>${nom}</b>: ${txt}</li>`;
-  }).join('');
-  return`<div class="bolsas"><p class="mut">Por bolsa (tu nº dentro de cada una, según el listado inicial):</p><ul>${filas}</ul></div>`;
+  let h=bolsaCard(b,null);
+  if(S.bolsas&&b.hab)h+=b.hab.map(c=>bolsaCard(b,c.replace('*',''),c.endsWith('*'))).join('');
+  return h+`<p class="mut">Posiciones y totales según el listado inicial (${fecha(S.base)}).</p>`;
 }
 function adjInfo(a){
   if(!a||!a.centro)return'';
@@ -173,7 +173,7 @@ function card(r){
   let body='';
   if(r.estado==='adjudicado')body=adjInfo(r.adj);
   else if(r.estado==='desactivado')body='<p class="cmp">Desactivado: no recibe plazas mientras siga así.</p>';
-  else if(b)body=ultimo(b.orden)+porBolsa(b);
+  else if(b)body=porBolsa(b);
   return`<article class="card"><div class="top"><div><div class="name">${esc(r.nombre)}</div><span class="tag t-${r.estado}">${ESTADO[r.estado]||esc(r.estado)}</span></div>${num}</div>
   ${body}${r.dup>1?`<p class="warn">Hay ${r.dup} personas con este nombre. Comprueba cuál eres por el orden inicial.</p>`:''}</article>`;
 }
