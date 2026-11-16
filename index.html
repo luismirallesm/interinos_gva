@@ -153,7 +153,7 @@ function bolsaCard(b,cod,desact){
   else{
     const w=ult.reduce((m,a)=>a.oini>m.oini?a:m),pw=pos(w.oini),dif=pw-pos(b.orden),nt=ult.filter(a=>a.oini>b.orden).length;
     f+=fila(`Último adjudicado (${dm})`,N(pw))
-      +fila('Entre tú y el último',dif>0?`<b class="si">${N(dif)} detrás</b>`:`${N(-dif)} delante`)
+      +fila('Entre tú y el último',dif>0?`<b class="si">${N(dif)} detrás</b>`:dif===0?'eres tú':`${N(-dif)} delante`)
       +fila('Adjudicados por detrás de ti',nt?`<b class="si">${N(nt)}</b>`:'0');
   }
   return`<section class="bolsa b-${cod||'GEN'}"><h3>${tit}</h3><dl>${f}</dl></section>`;
@@ -173,7 +173,7 @@ function card(r){
   let body='';
   if(r.estado==='adjudicado')body=adjInfo(r.adj);
   else if(r.estado==='desactivado')body='<p class="cmp">Desactivado: no recibe plazas mientras siga así.</p>';
-  else if(b)body=porBolsa(b);
+  if(b)body+=porBolsa(b);
   return`<article class="card"><div class="top"><div><div class="name">${esc(r.nombre)}</div><span class="tag t-${r.estado}">${ESTADO[r.estado]||esc(r.estado)}</span></div>${num}</div>
   ${body}${r.dup>1?`<p class="warn">Hay ${r.dup} personas con este nombre. Comprueba cuál eres por el orden inicial.</p>`:''}</article>`;
 }
@@ -183,7 +183,7 @@ function goneCard(r){
   const tag=a?`Adjudicado el ${fecha(a.fecha)}`:`${ESTADO[r.estado]||esc(r.estado)} en ${fecha(S.base)}`;
   const body=a?`<p class="cmp">${esc(a.centro||'')} · ${esc(a.loc||'')}${a.prov?' ('+esc(a.prov)+')':''}<br>${esc(a.esp||'')}</p>`
     :r.estado==='adjudicado'?adjInfo(r.adj):'<p class="cmp">Ya no aparece en el último listado.</p>';
-  return`<article class="card"><div class="top"><div><div class="name">${esc(r.nombre)}</div><span class="tag t-${a?'adjudicado':r.estado}">${tag}</span></div><div class="big">${r.orden.toLocaleString('es')}<small>orden inicial</small></div></div>${body}</article>`;
+  return`<article class="card"><div class="top"><div><div class="name">${esc(r.nombre)}</div><span class="tag t-${a?'adjudicado':r.estado}">${tag}</span></div><div class="big">${r.orden.toLocaleString('es')}<small>orden inicial</small></div></div>${body}${porBolsa(r)}</article>`;
 }
 function buscar(){
   const q=$('#q').value.trim(),out=$('#res');
