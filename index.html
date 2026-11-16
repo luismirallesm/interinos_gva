@@ -55,6 +55,12 @@ footer{margin-top:28px;color:var(--mut);font-size:.82rem}
   <label for="q" class="hint">Apellidos y nombre (o parte), o número de orden</label>
   <input id="q" type="search" placeholder="Ej.: garcia lopez ana" autocomplete="off">
   <p class="hint">Los listados de la GVA no incluyen NIF: la búsqueda es por nombre. Si hay homónimos verás todos.</p>
+  <details class="hint"><summary>¿Qué significan «orden inicial», «orden ese día» y «posición efectiva»?</summary>
+  <p>Los maestros interinos están en una <b>lista única</b> de la bolsa. La Conselleria adjudica a los interinos «por el orden que posean en la correspondiente lista de profesorado interino»: con servicios prestados por delante, y detrás quienes entran desde las oposiciones, por convocatoria y nota.</p>
+  <p><b>Orden inicial</b>: tu número en el listado de inicio de curso, que incluye a toda la bolsa. Es tu puesto en la bolsa y la referencia que sirve para comparar entre días.</p>
+  <p><b>Orden en el listado / orden ese día</b>: tu número en un listado diario concreto. Es la <i>misma</i> lista, renumerada tras quitar a quien ya obtuvo plaza en listados anteriores (y alguna baja o alta). Por eso baja aunque nadie te «adelante»: orden ese día ≈ orden inicial − personas de delante que ya salieron. No es un ranking distinto.</p>
+  <p><b>Posición efectiva</b>: 1 + personas activas por delante (sin contar desactivadas ni adjudicadas). Mide mejor cuánta gente tiene preferencia sobre ti.</p>
+  <p>Que adjudiquen a alguien con peor orden no es un salto de turno. Cada persona solo recibe los puestos que pide (son voluntarios), en las provincias que elige y de las especialidades en las que está habilitada, y en las plazas con requisito lingüístico necesita acreditarlo.</p></details>
   <div id="res"></div>
 </section>
 
@@ -65,7 +71,7 @@ footer{margin-top:28px;color:var(--mut);font-size:.82rem}
     <select id="fe"><option value="">Todas las especialidades</option></select>
   </div>
   <p class="mut" id="fcount"></p>
-  <div class="scroll"><table><thead><tr><th>Nombre</th><th>Orden</th><th>Centro</th><th>Especialidad</th><th>Jornada</th></tr></thead><tbody id="ft"></tbody></table></div>
+  <div class="scroll"><table><thead><tr><th>Nombre</th><th>Orden en el listado</th><th>Centro</th><th>Especialidad</th><th>Jornada</th></tr></thead><tbody id="ft"></tbody></table></div>
 </section>
 
 <section id="met" hidden></section>
@@ -112,7 +118,7 @@ async function init(){
     $('#estado').textContent=txt+' · cargando histórico…';
     initAdj();buscar();
     const [B,P,H,D]=await Promise.all([pB,pP,pH,pD]);
-    if(D){D.adj=D.adjudicados.map(e=>({nombre:e[0],oini:e[1],efini:e[2],fecha:e[3],ord:e[4],prov:e[5],loc:e[6],centro:e[7],esp:e[8]}));
+    if(D){D.adj=D.adjudicados.map(e=>({nombre:e[0],oini:e[1],efini:e[2],fecha:e[3],ord:e[4],prov:e[5],loc:e[6],centro:e[7],esp:e[8],salt:e[9]}));
       D.idx=new Map(D.adj.filter(a=>a.oini).map(a=>[a.nombre+'|'+a.oini,a]));
       D.max=D.adj.reduce((m,a)=>a.oini&&(!m||a.oini>m.oini)?a:m,null);}
     Object.assign(S,{B,P,hist:H.mae||{},D});
@@ -165,7 +171,8 @@ function goneCard(r){
   // Si salió por una adjudicación posterior, está en desde_inicio.json (nombre + orden inicial).
   const a=S.D&&S.D.idx.get(r.nombre+'|'+r.orden);
   const tag=a?`Adjudicado el ${fecha(a.fecha)}`:`${ESTADO[r.estado]||esc(r.estado)} en ${fecha(S.base)}`;
-  const body=a?`<p class="cmp"><b>${esc(a.centro||'')}</b> · ${esc(a.loc||'')}${a.prov?' ('+esc(a.prov)+')':''}<br>${esc(a.esp||'')} · orden inicial ${r.orden.toLocaleString('es')} · orden ese día ${a.ord.toLocaleString('es')}</p>`
+  const body=a?`<p class="cmp"><b>${esc(a.centro||'')}</b> · ${esc(a.loc||'')}${a.prov?' ('+esc(a.prov)+')':''}<br>${esc(a.esp||'')}</p>
+    <p class="cmp">Orden inicial en la bolsa: <b>${r.orden.toLocaleString('es')}</b> · nº ${a.ord.toLocaleString('es')} en el listado del ${fecha(a.fecha)} (${(r.orden-a.ord).toLocaleString('es')} personas de delante ya habían salido).${a.salt!=null?` Ese día tenía <b>${a.salt.toLocaleString('es')}</b> personas activas por delante que no obtuvieron plaza: no la pidieron, no tenían esa habilitación o eligieron otras provincias.`:''}</p>`
     :`<p class="cmp">Ya no aparece en el último listado${r.estado==='adjudicado'?' (adjudicado en el listado de inicio de curso).':'. No consta adjudicación en los listados que tenemos: puede haber salido por otra causa o faltar algún listado.'}</p>${adjInfo(r.adj)}`;
   return`<article class="card"><div class="name">${esc(r.nombre)}</div><span class="tag t-${a?'adjudicado':r.estado}">${tag}</span>${body}</article>`;
 }
@@ -207,7 +214,7 @@ function renderMet(){
     const por={};S.D.adj.forEach(a=>{if(a.oini)(por[a.fecha]=por[a.fecha]||[]).push(a.oini)});
     const fs=Object.keys(por).sort(),mx=Math.max(...fs.map(d=>Math.max(...por[d])));
     kpi+=`<h2 style="font:600 1.1rem Georgia,serif">Hasta dónde llega la adjudicación (orden en el listado de inicio)</h2><div class="bars">${fs.map(d=>{const v=por[d];return`<div><span style="width:84px">${fecha(d)}</span><b style="width:${Math.max(...v)/mx*50}%"></b>peor ${Math.max(...v).toLocaleString('es')} · mediana ${med(v).toLocaleString('es')}</div>`}).join('')}</div>
-    <p class="hint">Cada barra es el peor orden inicial entre las personas adjudicadas ese día.</p>`;
+    <p class="hint">Cada barra es el peor orden inicial entre las personas adjudicadas ese día. Se usa el orden inicial porque el orden de cada listado diario se renumera y no sirve para comparar días.</p>`;
   }
   const act=S.L.activos,des=S.L.rows.filter(r=>r.estado==='desactivado').length;
   kpi+=`<div class="card"><b>${act.toLocaleString('es')}</b> personas activas y <b>${des.toLocaleString('es')}</b> desactivadas en el último listado (el ${(des/S.L.total*100).toFixed(0)} % de la lista no puede recibir plaza).</div>`;

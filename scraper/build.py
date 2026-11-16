@@ -76,7 +76,13 @@ def compute_since_start(cuerpo: str, data_dir=None):
     """Quién ha sido adjudicado en los diarios posteriores al inicio de curso, con su orden inicial.
 
     Salida: data/<cuerpo>/desde_inicio.json con filas
-    [nombre, orden_inicio, pos_efectiva_inicio, fecha, orden_ese_dia, provincia, localidad, centro, especialidad]
+    [nombre, orden_inicio, pos_efectiva_inicio, fecha, orden_ese_dia, provincia, localidad, centro, especialidad,
+     activos_saltados]
+
+    El orden de cada listado es la misma lista única de la bolsa, renumerada tras quitar a quien ya salió:
+    orden_ese_dia ≈ orden_inicio − personas que estaban delante y ya no figuran. No es otro ranking.
+    activos_saltados = personas por delante en ese listado, no desactivadas, que no obtuvieron plaza ese día
+    (no la pidieron, no tienen la habilitación o el requisito lingüístico, o pidieron otras provincias).
     """
     data_dir = data_dir or config.DATA_DIR
     snaps = [json.loads(p.read_text("utf-8")) for p in sorted((data_dir / cuerpo).glob("????-??-??.json"))]
@@ -92,14 +98,17 @@ def compute_since_start(cuerpo: str, data_dir=None):
     diarios = [x for x in snaps if x.get("tipo") == "diario" and x["fecha"] > base["fecha"]]
     first: dict = {}
     for x in diarios:
+        libres = 0  # activos por delante sin plaza en este listado
         for r in _keyed(x["rows"]):
             if r["estado"] == "adjudicado" and r["_k"] not in first:
-                first[r["_k"]] = (x["fecha"], r)
+                first[r["_k"]] = (x["fecha"], r, libres)
+            if r["estado"] not in ("desactivado", "adjudicado"):
+                libres += 1
     rows = []
-    for k, (fecha, r) in first.items():
+    for k, (fecha, r, saltados) in first.items():
         o, a = ini.get(k, (None, None))
         adj = r.get("adj", {})
-        rows.append([r["nombre"], o, a, fecha, r["orden"], adj.get("provincia"), adj.get("localidad"), adj.get("centro"), adj.get("especialidad")])
+        rows.append([r["nombre"], o, a, fecha, r["orden"], adj.get("provincia"), adj.get("localidad"), adj.get("centro"), adj.get("especialidad"), saltados])
     rows.sort(key=lambda e: (e[3], e[1] or 0))
     out = {"base": base["fecha"], "diarios": [x["fecha"] for x in diarios], "adjudicados": rows}
     _dump(data_dir / cuerpo / "desde_inicio.json", out)

@@ -116,6 +116,7 @@ def test_desde_inicio(tmp_path):
     assert out["base"] == "2026-07-15" and out["diarios"] == ["2026-10-27"]
     (nombre, o_ini, ef_ini, fecha, o_dia, prov, *_), = out["adjudicados"]
     assert (nombre, o_ini, ef_ini, fecha, o_dia, prov) == ("D, D", 4, 3, "2026-10-27", 3, "Valencia")
+    assert out["adjudicados"][0][9] == 2  # A y B estaban activos por delante y no obtuvieron plaza
 
 
 class _Resp:
