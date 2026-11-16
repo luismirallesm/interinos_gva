@@ -63,7 +63,7 @@ def discover_links(session: requests.Session | None = None) -> list[str]:
         for a in soup.find_all("a", href=True):
             href = urljoin(page, a["href"])
             path = urlparse(href).path
-            m = config.LISTING_RE.search(path) or config.INICIO_RE.search(path)
+            m = config.LISTING_RE.search(path) or config.INICIO_RE.search(path) or config.PARTICIPANTES_RE.search(path)
             if m:
                 if m.group(2).lower() in config.CUERPOS:
                     found.add(href)

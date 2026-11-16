@@ -153,3 +153,58 @@ def test_probe_listings(tmp_path, monkeypatch):
     # 20/10 se salta (>7 días no aplica: hoy-20 = 3 días, así que SÍ se prueba), 21/10 conocido, 23/10 sin listado
     assert set(missing) == {"2026-10-20", "2026-10-23"}
     assert not any("261021" in u for u in s.calls)
+
+
+HABIL_SAMPLE = """\
+                      Bolsa del cuerpo de maestros / Borsa del cos de mestres
+
+                  "Listado Definitivo / Llista Definitiva - Curso / Curs 2026 / 2027"
+
+
+   1    MARQUET SOLDEVILA, ROSA MARIA                 AMB SERVEIS       INF   PRI
+  11    ARANDA CATALA, ENCARNACION                    AMB SERVEIS             PRI                        PT   AL
+  30    PASTOR GONZALEZ-NICOLAS, TOMAS FRANCISCO
+                                              AMB SERVEIS                     PRI             FRA
+13038 GONZALEZ DE LA ALEJA RUIZ DE LA HERMOSA,SENSE
+                                               ISABELSERVEIS
+                                                      MARIA                   PRI
+16669 CERDAN SOLER, OLGA                              SENSE SERVEIS INF *
+
+(*) Habilitació desactivada
+"""
+
+
+def test_parse_habilitaciones():
+    from scraper.parse_habil import parse_text
+    rows = parse_text(HABIL_SAMPLE)
+    assert [r["orden"] for r in rows] == [1, 11, 30, 13038, 16669]
+    assert rows[1]["habs"] == ["PRI", "PT", "AL"] and rows[1]["servicios"]
+    assert rows[2]["nombre"] == "PASTOR GONZALEZ-NICOLAS, TOMAS FRANCISCO" and rows[2]["habs"] == ["PRI", "FRA"]
+    assert rows[3]["habs"] == ["PRI"] and not rows[3]["servicios"]
+    assert rows[3]["nombre"].startswith("GONZALEZ DE LA ALEJA RUIZ DE LA HERMOSA, ISABEL")
+    assert rows[4]["habs"] == [] and rows[4]["desact"] == ["INF"]
+
+
+def test_align_y_especialidad():
+    from scraper.parse_habil import align, codigo_especialidad
+    base = [{"nombre": "MARQUET SOLDEVILA, ROSA M"}, {"nombre": "LOPEZ, ANA"}]
+    habil = [{"nombre": "MARQUET SOLDEVILA, ROSA MARIA", "habs": ["INF"], "desact": []},
+             {"nombre": "OTRA, PERSONA", "habs": ["PRI"], "desact": []},
+             {"nombre": "LOPEZ , ANA", "habs": ["PT"], "desact": ["AL"]}]
+    assert align(base, habil) == ["INF", "PT AL*"]
+    assert codigo_especialidad("EDUCACIO ESPECIAL: AUDICIO I LLENGUATGE") == "AL"
+    assert codigo_especialidad("LLENGUA ESTRANGERA: ANGLÈS") == "ING"
+    assert codigo_especialidad("FPA PRIMÀRIA") is None
+
+
+def test_process_participantes(tmp_path, monkeypatch):
+    import json
+    from scraper import build, config, parse_habil
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(parse_habil, "pdf_to_text", lambda p: HABIL_SAMPLE)
+    assert build.process("x.pdf", "ini_2026_par_def_int_lis_mae.pdf") == 5
+    (tmp_path / "mae" / "2026-07-15.json").write_text(json.dumps({"fecha": "2026-07-15", "tipo": "inicio_curso", "rows": [
+        {"orden": 1, "nombre": "MARQUET SOLDEVILA, ROSA M", "estado": "adjudicado"},
+        {"orden": 2, "nombre": "CERDAN SOLER, OLGA", "estado": "no_adjudicado"}]}))
+    out = build.compute_habilitaciones("mae", tmp_path)
+    assert out["hab"] == ["INF PRI", "INF*"] and out["curso"] == "2026"

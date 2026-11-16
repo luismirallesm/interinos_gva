@@ -21,6 +21,7 @@ from collections import Counter
 from . import config
 from .fetch import discover_links, download, folder_of, probe_listings
 from .parse_pdf import parse_pdf
+from . import parse_habil
 
 
 def _load(path, default):
@@ -77,7 +78,7 @@ def compute_since_start(cuerpo: str, data_dir=None):
 
     Salida: data/<cuerpo>/desde_inicio.json con filas
     [nombre, orden_inicio, pos_efectiva_inicio, fecha, orden_ese_dia, provincia, localidad, centro, especialidad,
-     activos_saltados]
+     activos_saltados, codigo_bolsa]
 
     El orden de cada listado es la misma lista única de la bolsa, renumerada tras quitar a quien ya salió:
     orden_ese_dia ≈ orden_inicio − personas que estaban delante y ya no figuran. No es otro ranking.
@@ -108,7 +109,8 @@ def compute_since_start(cuerpo: str, data_dir=None):
     for k, (fecha, r, saltados) in first.items():
         o, a = ini.get(k, (None, None))
         adj = r.get("adj", {})
-        rows.append([r["nombre"], o, a, fecha, r["orden"], adj.get("provincia"), adj.get("localidad"), adj.get("centro"), adj.get("especialidad"), saltados])
+        rows.append([r["nombre"], o, a, fecha, r["orden"], adj.get("provincia"), adj.get("localidad"), adj.get("centro"), adj.get("especialidad"), saltados,
+                     parse_habil.codigo_especialidad(adj.get("especialidad"))])
     rows.sort(key=lambda e: (e[3], e[1] or 0))
     out = {"base": base["fecha"], "diarios": [x["fecha"] for x in diarios], "adjudicados": rows}
     _dump(data_dir / cuerpo / "desde_inicio.json", out)
@@ -116,7 +118,41 @@ def compute_since_start(cuerpo: str, data_dir=None):
     return out
 
 
+def store_participantes(path: str, curso: str, cuerpo: str) -> int:
+    """Guarda la lista de participantes (habilitaciones) tal cual; el cruce con el listado inicial va aparte."""
+    rows = parse_habil.parse_pdf(path)
+    _dump(config.DATA_DIR / cuerpo / "participantes.json", {"curso": curso, "rows": [
+        [r["orden"], r["nombre"], r["servicios"], " ".join(r["habs"] + [c + "*" for c in r["desact"]])] for r in rows]})
+    print(f"{cuerpo}: {len(rows)} participantes con habilitaciones (curso {curso})")
+    return len(rows)
+
+
+def compute_habilitaciones(cuerpo: str, data_dir=None):
+    """data/<cuerpo>/habilitaciones.json: habilitaciones por orden del listado inicial.
+
+    {"base": fecha listado inicial, "curso": año, "codigos": {...}, "hab": ["INF PRI", "PRI PT*", "", ...]}
+    hab[i] corresponde al orden inicial i+1; "" si no se encontró; «*» = habilitación desactivada.
+    """
+    data_dir = data_dir or config.DATA_DIR
+    par = _load(data_dir / cuerpo / "participantes.json", None)
+    snaps = [json.loads(p.read_text("utf-8")) for p in sorted((data_dir / cuerpo).glob("????-??-??.json"))]
+    bases = [x for x in snaps if x.get("tipo") == "inicio_curso"]
+    if not par or not bases:
+        return None
+    base = bases[-1]
+    hrows = [{"orden": o, "nombre": n, "habs": h.split(), "desact": []} for o, n, _s, h in par["rows"]]
+    hab = parse_habil.align(base["rows"], hrows)
+    out = {"base": base["fecha"], "curso": par["curso"], "codigos": parse_habil.CODIGOS, "hab": hab}
+    _dump(data_dir / cuerpo / "habilitaciones.json", out)
+    print(f"{cuerpo}: habilitaciones para {sum(1 for h in hab if h)} de {len(hab)} del listado inicial")
+    return out
+
+
 def process(path: str, name: str) -> int:
+    m = config.PARTICIPANTES_RE.search(name)
+    if m:
+        curso, cuerpo = m.group(1), m.group(2).lower()
+        return store_participantes(path, curso, cuerpo) if cuerpo in config.CUERPOS else 0
     fecha, cuerpo = date_cuerpo_from_name(name)
     if cuerpo not in config.CUERPOS:
         print(f"IGNORADO {name}: cuerpo {cuerpo!r} no está en CUERPOS {config.CUERPOS}")
@@ -139,6 +175,7 @@ def main() -> None:
         process(args.pdf, os.path.basename(args.pdf))
         for c in config.CUERPOS:
             compute_since_start(c)
+            compute_habilitaciones(c)
         return
 
     state = _load(config.STATE_FILE, {"processed": {}})
@@ -216,6 +253,7 @@ def main() -> None:
     prune_cuerpos()
     for c in config.CUERPOS:
         compute_since_start(c)
+        compute_habilitaciones(c)
 
 
 def prune_cuerpos() -> None:

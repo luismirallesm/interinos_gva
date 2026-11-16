@@ -15,6 +15,8 @@ SOURCES = [
     # Aquí está el enlace "listado de adjudicaciones maestros" (verificado por el usuario)
     "https://ceice.gva.es/es/web/rrhh-educacion/resolucion",
     "https://ceice.gva.es/es/web/rrhh-educacion/adjudicaciones",
+    # Listas de participantes de inicio de curso (bolsa con las habilitaciones de cada persona)
+    "https://ceice.gva.es/es/web/rrhh-educacion/participantes2",
 ]
 SUBPAGE_KEYWORDS = ("resoluc", "adjudic", "borsa", "bolsa", "interin")
 
@@ -22,6 +24,8 @@ SUBPAGE_KEYWORDS = ("resoluc", "adjudic", "borsa", "bolsa", "interin")
 # Listado inicio curso:  ini_2026_adj_int_mae.pdf  (ini_<año>_adj_int_<cuerpo>.pdf)
 LISTING_RE = re.compile(r"(\d{6})_lis_([a-z]+)\.pdf", re.IGNORECASE)
 INICIO_RE = re.compile(r"ini_(\d{4})_adj_int_([a-z]+)\.pdf", re.IGNORECASE)
+# Participantes inicio curso (definitivo), con habilitaciones: ini_2026_par_def_int_lis_mae.pdf
+PARTICIPANTES_RE = re.compile(r"ini_(\d{4})_par_def_int_lis_([a-z]+)\.pdf", re.IGNORECASE)
 
 # Cuerpos que se procesan (mae = maestros). Secundaria (sec) queda fuera por ahora.
 CUERPOS = ("mae",)
