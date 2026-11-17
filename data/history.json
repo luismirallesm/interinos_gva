@@ -188,6 +188,15 @@
    "no_ha_participado": 19,
    "tipo": "diario",
    "total": 6180
+  },
+  "2026-11-17": {
+   "adjudicado": 106,
+   "desactivado": 2738,
+   "ha_participado": 1626,
+   "no_adjudicado": 1601,
+   "no_ha_participado": 19,
+   "tipo": "diario",
+   "total": 6090
   }
  }
 }
